@@ -145,7 +145,14 @@ CLIENT_ID=${CLIENT_ID_INPUT:-default}
 
 echo ""
 read -p "DNS server [default: 8.8.8.8:53]: " DNS_INPUT
-DNS=${DNS_INPUT:-8.8.8.8:53}
+DNS_RAW=${DNS_INPUT:-8.8.8.8:53}
+
+# Map 127.0.0.1 to host.containers.internal for container access
+DNS="$DNS_RAW"
+if [[ "$DNS_RAW" == "127.0.0.1"* ]] || [[ "$DNS_RAW" == "localhost"* ]]; then
+    DNS="${DNS_RAW/127.0.0.1/host.containers.internal}"
+    DNS="${DNS/localhost/host.containers.internal}"
+fi
 
 echo ""
 read -p "Use SOCKS5 proxy for egress? (y/N): " USE_PROXY
@@ -160,7 +167,13 @@ if [[ "$USE_PROXY" =~ ^[Yy]$ ]]; then
     SOCKS_PROXY_PORT=${PROXY_PORT_INPUT:-1080}
 
     echo "[*] Will use SOCKS5 proxy: $SOCKS_PROXY_ADDR:$SOCKS_PROXY_PORT"
-    EXTRA_ARGS+=(-socks-proxy "$SOCKS_PROXY_ADDR" -socks-proxy-port "$SOCKS_PROXY_PORT")
+    
+    # Map 127.0.0.1 to host.containers.internal for container access
+    INTERNAL_PROXY_ADDR="$SOCKS_PROXY_ADDR"
+    if [[ "$SOCKS_PROXY_ADDR" == "127.0.0.1" ]] || [[ "$SOCKS_PROXY_ADDR" == "localhost" ]]; then
+        INTERNAL_PROXY_ADDR="host.containers.internal"
+    fi
+    EXTRA_ARGS+=(-socks-proxy "$INTERNAL_PROXY_ADDR" -socks-proxy-port "$SOCKS_PROXY_PORT")
 fi
 
 TRANSPORT_ARGS=()
@@ -289,6 +302,7 @@ podman pull $IMAGE_NAME
 
 echo "[*] Building OlcRTC..."
 podman run --rm \
+    --add-host=host.containers.internal:host-gateway \
     -v $WORK_DIR:/app:Z \
     -v $GOMOD_CACHE:/go/pkg/mod:Z \
     -v $GO_BUILD_CACHE:/root/.cache/go-build:Z \
@@ -304,6 +318,7 @@ fi
 if [ "$GEN_ROOM" = "1" ]; then
     echo "[*] Generating room via -mode gen..."
     ROOM_ID=$(podman run --rm \
+        --add-host=host.containers.internal:host-gateway \
         -v $WORK_DIR:/app:Z \
         -w /app \
         $IMAGE_NAME \
@@ -336,6 +351,7 @@ fi
 echo "[*] Starting OlcRTC server..."
 podman run -d \
     --name $CONTAINER_NAME \
+    --add-host=host.containers.internal:host-gateway \
     --restart unless-stopped \
     -v $WORK_DIR:/app:Z \
     -w /app \

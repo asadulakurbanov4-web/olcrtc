@@ -134,7 +134,14 @@ fi
 
 echo ""
 read -p "DNS server [default: 8.8.8.8:53]: " DNS_INPUT
-DNS=${DNS_INPUT:-8.8.8.8:53}
+DNS_RAW=${DNS_INPUT:-8.8.8.8:53}
+
+# Map 127.0.0.1 to host.containers.internal for container access
+DNS="$DNS_RAW"
+if [[ "$DNS_RAW" == "127.0.0.1"* ]] || [[ "$DNS_RAW" == "localhost"* ]]; then
+    DNS="${DNS_RAW/127.0.0.1/host.containers.internal}"
+    DNS="${DNS/localhost/host.containers.internal}"
+fi
 
 echo ""
 read -p "SOCKS5 ip [default: 127.0.0.1]: " IP_INPUT
@@ -261,6 +268,7 @@ podman pull $IMAGE_NAME
 
 echo "[*] Building OlcRTC..."
 podman run --rm \
+    --add-host=host.containers.internal:host-gateway \
     -v $WORK_DIR:/app:Z \
     -w /app \
     $IMAGE_NAME \
@@ -279,6 +287,7 @@ fi
 echo "[*] Starting OlcRTC client..."
 podman run -d \
     --name $CONTAINER_NAME \
+    --add-host=host.containers.internal:host-gateway \
     --restart unless-stopped \
     -p $SOCKS_IP:$SOCKS_PORT:$SOCKS_PORT \
     -v $WORK_DIR:/app:Z \
