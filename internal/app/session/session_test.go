@@ -14,7 +14,7 @@ func TestValidate(t *testing.T) {
 		Mode:      modeSRV,
 		Link:      "direct",
 		Transport: "datachannel",
-		Carrier:   "telemost", //nolint:goconst // test literal, repetition is intentional
+		Auth:      "telemost",
 		RoomID:    "room-1",
 		ClientID:  "client-1",
 		KeyHex:    "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
@@ -31,7 +31,7 @@ func TestValidate(t *testing.T) {
 			name: "jazz allows empty room id",
 			cfg: func() Config {
 				cfg := base
-				cfg.Carrier = "jazz" //nolint:goconst // test literal, repetition is intentional
+				cfg.Auth = "jazz"
 				cfg.RoomID = ""
 				return cfg
 			}(),
@@ -59,7 +59,7 @@ func TestValidate(t *testing.T) {
 			name: "unsupported carrier",
 			cfg: func() Config {
 				cfg := base
-				cfg.Carrier = "unknown" //nolint:goconst // test literal, repetition is intentional
+				cfg.Auth = "unknown" //nolint:goconst // test literal, repetition is intentional
 				return cfg
 			}(),
 			want: ErrUnsupportedCarrier,
@@ -338,25 +338,7 @@ func TestValidate(t *testing.T) {
 	}
 }
 
-func TestBuildRoomURL(t *testing.T) {
-	tests := []struct {
-		carrier string
-		roomID  string
-		want    string
-	}{
-		{carrier: "telemost", roomID: "abc", want: "https://telemost.yandex.ru/j/abc"},
-		{carrier: "jazz", roomID: "", want: "any"},
-		{carrier: "jazz", roomID: "room", want: "room"},
-		{carrier: "wbstream", roomID: "wb", want: "wb"}, //nolint:goconst // test literal, repetition is intentional
-		{carrier: "other", roomID: "raw", want: "raw"},
-	}
-
-	for _, tt := range tests {
-		if got := buildRoomURL(tt.carrier, tt.roomID); got != tt.want {
-			t.Fatalf("buildRoomURL(%q, %q) = %q, want %q", tt.carrier, tt.roomID, got, tt.want)
-		}
-	}
-}
+const testAuthWBStream = "wbstream"
 
 func TestValidateGen(t *testing.T) {
 	RegisterDefaults()
@@ -368,35 +350,35 @@ func TestValidateGen(t *testing.T) {
 	}{
 		{
 			name: "valid wbstream",
-			cfg:  Config{Carrier: "wbstream", DNSServer: "1.1.1.1:53", Amount: 3},
+			cfg:  Config{Auth: testAuthWBStream, DNSServer: "1.1.1.1:53", Amount: 3},
 		},
 		{
 			name: "valid jazz",
-			cfg:  Config{Carrier: "jazz", DNSServer: "1.1.1.1:53", Amount: 1},
+			cfg:  Config{Auth: "jazz", DNSServer: "1.1.1.1:53", Amount: 1},
 		},
 		{
-			name: "missing carrier",
+			name: "missing auth",
 			cfg:  Config{DNSServer: "1.1.1.1:53", Amount: 1},
-			want: ErrCarrierRequired,
+			want: ErrAuthRequired,
 		},
 		{
-			name: "unsupported carrier",
-			cfg:  Config{Carrier: "unknown", DNSServer: "1.1.1.1:53", Amount: 1},
+			name: "unsupported auth",
+			cfg:  Config{Auth: "unknown", DNSServer: "1.1.1.1:53", Amount: 1},
 			want: ErrUnsupportedCarrier,
 		},
 		{
 			name: "missing dns",
-			cfg:  Config{Carrier: "wbstream", Amount: 1},
+			cfg:  Config{Auth: testAuthWBStream, Amount: 1},
 			want: ErrDNSServerRequired,
 		},
 		{
 			name: "amount zero",
-			cfg:  Config{Carrier: "wbstream", DNSServer: "1.1.1.1:53", Amount: 0},
+			cfg:  Config{Auth: testAuthWBStream, DNSServer: "1.1.1.1:53", Amount: 0},
 			want: ErrAmountRequired,
 		},
 		{
 			name: "amount negative",
-			cfg:  Config{Carrier: "wbstream", DNSServer: "1.1.1.1:53", Amount: -1},
+			cfg:  Config{Auth: testAuthWBStream, DNSServer: "1.1.1.1:53", Amount: -1},
 			want: ErrAmountRequired,
 		},
 	}
@@ -417,9 +399,9 @@ func TestValidateGen(t *testing.T) {
 	}
 }
 
-func TestGenUnsupportedCarrier(t *testing.T) {
+func TestGenUnsupportedAuth(t *testing.T) {
 	RegisterDefaults()
-	cfg := Config{Carrier: "telemost", DNSServer: "1.1.1.1:53", Amount: 1}
+	cfg := Config{Auth: "telemost", DNSServer: "1.1.1.1:53", Amount: 1}
 	err := Gen(context.Background(), cfg, func(string) {})
 	if !errors.Is(err, ErrUnsupportedCarrier) {
 		t.Fatalf("Gen(telemost) error = %v, want ErrUnsupportedCarrier", err)

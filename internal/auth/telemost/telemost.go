@@ -3,9 +3,12 @@ package telemost
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/openlibrecommunity/olcrtc/internal/auth"
 )
+
+const roomURLPrefix = "https://telemost.yandex.ru/j/"
 
 // Provider produces Goolom credentials for the Yandex Telemost service.
 type Provider struct{}
@@ -15,14 +18,19 @@ func (Provider) Engine() string { return "goolom" }
 
 // Issue fetches connection info for a Telemost room and returns engine credentials.
 //
-// cfg.RoomURL must be a Telemost conference URL (e.g.
-// https://telemost.yandex.ru/j/<id>). Room creation is not supported by the
-// Telemost API; rooms originate in the Yandex UI.
+// cfg.RoomURL accepts either a full Telemost conference URL
+// (https://telemost.yandex.ru/j/<id>) or just the room ID hash. Room
+// creation is not supported by the Telemost API; rooms originate in the
+// Yandex UI.
 func (Provider) Issue(ctx context.Context, cfg auth.Config) (auth.Credentials, error) {
 	if cfg.RoomURL == "" {
 		return auth.Credentials{}, auth.ErrRoomIDRequired
 	}
-	info, err := GetConnectionInfo(ctx, cfg.RoomURL, cfg.Name)
+	roomURL := cfg.RoomURL
+	if !strings.HasPrefix(roomURL, "https://") {
+		roomURL = roomURLPrefix + roomURL
+	}
+	info, err := GetConnectionInfo(ctx, roomURL, cfg.Name)
 	if err != nil {
 		return auth.Credentials{}, fmt.Errorf("get connection info: %w", err)
 	}
@@ -32,8 +40,8 @@ func (Provider) Issue(ctx context.Context, cfg auth.Config) (auth.Credentials, e
 		Extra: map[string]string{
 			"roomID":           info.RoomID,
 			"credentials":      info.Credentials,
-			"roomURL":          cfg.RoomURL,
-			"telemetryReferer": cfg.RoomURL,
+			"roomURL":          roomURL,
+			"telemetryReferer": roomURL,
 		},
 	}, nil
 }

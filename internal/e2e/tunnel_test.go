@@ -398,7 +398,7 @@ func validSessionConfig(mode, carrierName, transportName string) session.Config 
 		Mode:            mode,
 		Link:            "direct",
 		Transport:       transportName,
-		Carrier:         carrierName,
+		Auth:            carrierName,
 		RoomID:          "room",
 		ClientID:        "client-1",
 		KeyHex:          testKeyHex,
@@ -426,7 +426,7 @@ func validLinkConfig(carrierName, transportName string) link.Config {
 	cfg := validSessionConfig("cnc", carrierName, transportName)
 	return link.Config{
 		Transport:       cfg.Transport,
-		Carrier:         cfg.Carrier,
+		Carrier:         cfg.Auth,
 		RoomURL:         "room",
 		ClientID:        cfg.ClientID,
 		Name:            "e2e-" + carrierName + "-" + transportName,
@@ -542,6 +542,7 @@ func startTunnel(t *testing.T, serverClientID, clientClientID string) *tunnelRun
 			0,
 			0,
 			0,
+			"", "", "",
 		)
 	}()
 	room.waitConnected(t, 1)
@@ -578,6 +579,7 @@ func startTunnel(t *testing.T, serverClientID, clientClientID string) *tunnelRun
 			0,
 			0,
 			0,
+			"", "", "",
 		)
 	}()
 	waitForReady(t, ready)
@@ -633,6 +635,7 @@ func startRealTunnel(
 			4,
 			512,
 			1500,
+			"", "", "",
 		)
 	}()
 
@@ -678,6 +681,7 @@ func startRealTunnel(
 			4,
 			512,
 			1500,
+			"", "", "",
 		)
 	}()
 

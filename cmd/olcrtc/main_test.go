@@ -20,7 +20,7 @@ func TestToSessionConfig(t *testing.T) {
 		mode:            "cnc",
 		link:            "direct", //nolint:goconst // test literal, repetition is intentional
 		transport:       "vp8channel",
-		carrier:         "jazz", //nolint:goconst // test literal, repetition is intentional
+		auth:            "jazz", //nolint:goconst // test literal, repetition is intentional
 		roomID:          "room", //nolint:goconst // test literal, repetition is intentional
 		clientID:        "client", //nolint:goconst // test literal, repetition is intentional
 		keyHex:          "key", //nolint:goconst // test literal, repetition is intentional
@@ -49,7 +49,7 @@ func TestToSessionConfig(t *testing.T) {
 	}
 
 	got := toSessionConfig(cfg)
-	if got.Mode != cfg.mode || got.Carrier != "jazz" || got.SOCKSPort != cfg.socksPort ||
+	if got.Mode != cfg.mode || got.Auth != "jazz" || got.SOCKSPort != cfg.socksPort ||
 		got.VideoTileRS != cfg.videoTileRS || got.VP8BatchSize != cfg.vp8BatchSize ||
 		got.SEIFPS != cfg.seiFPS || got.SEIBatchSize != cfg.seiBatchSize ||
 		got.SEIFragmentSize != cfg.seiFragmentSize || got.SEIAckTimeoutMS != cfg.seiAckTimeoutMS ||
@@ -64,7 +64,7 @@ func TestParseFlagsFrom(t *testing.T) {
 		"-mode", "srv", //nolint:goconst // test literal, repetition is intentional
 		"-link", "direct",
 		"-transport", "vp8channel",
-		"-carrier", "telemost",
+		"-auth", "telemost",
 		"-id", "room",
 		"-client-id", "client",
 		"-socks-port", "1080",
@@ -96,7 +96,7 @@ func TestParseFlagsFrom(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseFlagsFrom() error = %v", err)
 	}
-	if cfg.mode != "srv" || cfg.carrier != "telemost" || cfg.roomID != "room" ||
+	if cfg.mode != "srv" || cfg.auth != "telemost" || cfg.roomID != "room" ||
 		cfg.debug != true || cfg.videoCodec != "tile" || cfg.videoTileRS != 40 ||
 		cfg.vp8FPS != 24 || cfg.vp8BatchSize != 3 || cfg.seiFPS != 40 ||
 		cfg.seiBatchSize != 4 || cfg.seiFragmentSize != 512 || cfg.seiAckTimeoutMS != 1500 ||
@@ -117,7 +117,7 @@ func TestRunGenModeValidationErrors(t *testing.T) {
 		t.Fatal("runWithConfig(gen, no carrier) error = nil")
 	}
 
-	if err := runWithConfig(config{mode: "gen", carrier: "wbstream", dnsServer: "1.1.1.1:53"}); err == nil { //nolint:goconst,lll // test literal, repetition is intentional
+	if err := runWithConfig(config{mode: "gen", auth: "wbstream", dnsServer: "1.1.1.1:53"}); err == nil { //nolint:goconst,lll // test literal, repetition is intentional
 		t.Fatal("runWithConfig(gen, amount=0) error = nil")
 	}
 }
@@ -129,14 +129,14 @@ func TestRunGenModeCallsGen(t *testing.T) {
 	oldRunGen := runGen
 	t.Cleanup(func() { runGen = oldRunGen })
 	runGen = func(cfg config) error {
-		if cfg.carrier != "wbstream" || cfg.dnsServer != "1.1.1.1:53" || cfg.amount != 3 {
+		if cfg.auth != "wbstream" || cfg.dnsServer != "1.1.1.1:53" || cfg.amount != 3 {
 			t.Fatalf("runGen cfg = %+v", cfg)
 		}
 		collected = append(collected, "ok")
 		return nil
 	}
 
-	err := runWithConfig(config{mode: "gen", carrier: "wbstream", dnsServer: "1.1.1.1:53", amount: 3})
+	err := runWithConfig(config{mode: "gen", auth: "wbstream", dnsServer: "1.1.1.1:53", amount: 3})
 	if err != nil {
 		t.Fatalf("runWithConfig(gen) error = %v", err)
 	}
@@ -151,7 +151,7 @@ func TestRunWithConfigValidationAndDataDirErrors(t *testing.T) {
 		mode:       "srv",
 		link:       "direct",
 		transport:  "datachannel",
-		carrier:    "jazz",
+		auth:       "jazz",
 		clientID:   "client",
 		keyHex:     "key",
 		dnsServer:  "1.1.1.1:53",
@@ -183,7 +183,7 @@ func TestRunWithArgsSuccessfulSessionReturn(t *testing.T) {
 	called := false
 	runSession = func(ctx context.Context, cfg session.Config) error {
 		called = true
-		if cfg.Mode != "srv" || cfg.Carrier != "jazz" || cfg.ClientID != "client" {
+		if cfg.Mode != "srv" || cfg.Auth != "jazz" || cfg.ClientID != "client" {
 			t.Fatalf("session config = %+v", cfg)
 		}
 		select {
@@ -198,7 +198,7 @@ func TestRunWithArgsSuccessfulSessionReturn(t *testing.T) {
 		"-mode", "srv",
 		"-link", "direct",
 		"-transport", "datachannel",
-		"-carrier", "jazz",
+		"-auth", "jazz",
 		"-client-id", "client",
 		"-key", "key",
 		"-dns", "1.1.1.1:53",

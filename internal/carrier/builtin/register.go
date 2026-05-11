@@ -15,4 +15,5 @@ func Register() {
 	registerEngineAuth("wbstream", authWBStream.Provider{})
 	registerEngineAuth("jazz", authSaluteJazz.Provider{})
 	registerEngineAuth("telemost", authTelemost.Provider{})
+	registerDirect("none")
 }

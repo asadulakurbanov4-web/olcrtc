@@ -44,6 +44,10 @@ type Config struct {
 	DNSServer string
 	ProxyAddr string
 	ProxyPort int
+	// URL, Token, and Engine are used by the "none" auth carrier (direct engine access).
+	URL    string
+	Token  string
+	Engine string
 }
 
 // Factory creates a new carrier session.

@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/openlibrecommunity/olcrtc/internal/auth"
-	authSaluteJazz "github.com/openlibrecommunity/olcrtc/internal/auth/salutejazz"
-	authWBStream "github.com/openlibrecommunity/olcrtc/internal/auth/wbstream"
 	"github.com/openlibrecommunity/olcrtc/internal/carrier"
 	"github.com/openlibrecommunity/olcrtc/internal/carrier/builtin"
 	"github.com/openlibrecommunity/olcrtc/internal/client"
@@ -26,19 +24,16 @@ import (
 )
 
 const (
-	modeSRV               = "srv"
-	modeCNC               = "cnc"
-	modeGen               = "gen"
-	carrierJazz           = "jazz"
-	carrierTelemost       = "telemost"
-	carrierWBStream       = "wbstream"
-	transportVideo        = "videochannel"
-	transportVP8          = "vp8channel"
-	transportSEI          = "seichannel"
-	videoCodecQRCode      = "qrcode"
-	videoCodecTile        = "tile"
-	roomURLAny            = "any"
-	telemostRoomURLPrefix = "https://telemost.yandex.ru/j/"
+	modeSRV          = "srv"
+	modeCNC          = "cnc"
+	modeGen          = "gen"
+	authJazz         = "jazz"
+	authNone         = "none"
+	transportVideo   = "videochannel"
+	transportVP8     = "vp8channel"
+	transportSEI     = "seichannel"
+	videoCodecQRCode = "qrcode"
+	videoCodecTile   = "tile"
 )
 
 var (
@@ -48,9 +43,9 @@ var (
 	ErrModeRequired = errors.New("mode required (use -mode srv, -mode cnc or -mode gen)")
 	// ErrAmountRequired indicates that -amount is required for gen mode.
 	ErrAmountRequired = errors.New("amount required for gen mode (use -amount <n>)")
-	// ErrCarrierRequired indicates that no carrier was selected.
-	ErrCarrierRequired = errors.New(
-		"carrier required (use -carrier telemost, -carrier jazz or -carrier wbstream)")
+	// ErrAuthRequired indicates that no auth provider was selected.
+	ErrAuthRequired = errors.New(
+		"auth provider required (use -auth telemost, -auth jazz, -auth wbstream or -auth none)")
 	// ErrUnsupportedCarrier indicates that carrier is not registered.
 	ErrUnsupportedCarrier = errors.New("unsupported carrier")
 	// ErrUnsupportedLink indicates that link is not registered.
@@ -113,7 +108,10 @@ type Config struct {
 	Mode            string
 	Link            string
 	Transport       string
-	Carrier         string
+	Auth            string
+	Engine          string
+	URL             string
+	Token           string
 	RoomID          string
 	ClientID        string
 	KeyHex          string
@@ -158,7 +156,7 @@ func Validate(cfg Config) error {
 	if err := validateMode(cfg); err != nil {
 		return err
 	}
-	if err := validateCarrier(cfg); err != nil {
+	if err := validateAuth(cfg); err != nil {
 		return err
 	}
 	if err := validateLink(cfg); err != nil {
@@ -185,12 +183,12 @@ func validateMode(cfg Config) error {
 	}
 }
 
-func validateCarrier(cfg Config) error {
-	if cfg.Carrier == "" {
-		return ErrCarrierRequired
+func validateAuth(cfg Config) error {
+	if cfg.Auth == "" {
+		return ErrAuthRequired
 	}
-	if !slices.Contains(carrier.Available(), cfg.Carrier) {
-		return fmt.Errorf("%w: %s (available: %v)", ErrUnsupportedCarrier, cfg.Carrier, carrier.Available())
+	if !slices.Contains(carrier.Available(), cfg.Auth) {
+		return fmt.Errorf("%w: %s (available: %v)", ErrUnsupportedCarrier, cfg.Auth, carrier.Available())
 	}
 	return nil
 }
@@ -216,7 +214,7 @@ func validateTransportRegistration(cfg Config) error {
 }
 
 func validateCommon(cfg Config) error {
-	if cfg.RoomID == "" && cfg.Carrier != carrierJazz {
+	if cfg.RoomID == "" && cfg.Auth != authJazz && cfg.Auth != authNone {
 		return ErrRoomIDRequired
 	}
 	if cfg.ClientID == "" {
@@ -314,7 +312,7 @@ func validateModeConfig(cfg Config) error {
 
 // Run starts the configured mode.
 func Run(ctx context.Context, cfg Config) error {
-	roomURL := buildRoomURL(cfg.Carrier, cfg.RoomID)
+	roomURL := cfg.RoomID
 
 	switch cfg.Mode {
 	case modeSRV:
@@ -322,7 +320,7 @@ func Run(ctx context.Context, cfg Config) error {
 			ctx,
 			cfg.Link,
 			cfg.Transport,
-			cfg.Carrier,
+			cfg.Auth,
 			roomURL,
 			cfg.KeyHex,
 			cfg.ClientID,
@@ -345,6 +343,7 @@ func Run(ctx context.Context, cfg Config) error {
 			cfg.SEIBatchSize,
 			cfg.SEIFragmentSize,
 			cfg.SEIAckTimeoutMS,
+			cfg.Engine, cfg.URL, cfg.Token,
 		); err != nil {
 			return fmt.Errorf("server: %w", err)
 		}
@@ -354,7 +353,7 @@ func Run(ctx context.Context, cfg Config) error {
 			ctx,
 			cfg.Link,
 			cfg.Transport,
-			cfg.Carrier,
+			cfg.Auth,
 			roomURL,
 			cfg.KeyHex,
 			cfg.ClientID,
@@ -378,6 +377,7 @@ func Run(ctx context.Context, cfg Config) error {
 			cfg.SEIBatchSize,
 			cfg.SEIFragmentSize,
 			cfg.SEIAckTimeoutMS,
+			cfg.Engine, cfg.URL, cfg.Token,
 		); err != nil {
 			return fmt.Errorf("client: %w", err)
 		}
@@ -387,29 +387,13 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 }
 
-func buildRoomURL(carrierName, roomID string) string {
-	switch carrierName {
-	case carrierTelemost:
-		return telemostRoomURLPrefix + roomID
-	case carrierJazz:
-		if roomID == "" {
-			return roomURLAny
-		}
-		return roomID
-	case carrierWBStream:
-		return roomID
-	default:
-		return roomID
-	}
-}
-
 // ValidateGen validates that the config contains enough fields to run gen mode.
 func ValidateGen(cfg Config) error {
-	if cfg.Carrier == "" {
-		return ErrCarrierRequired
+	if cfg.Auth == "" {
+		return ErrAuthRequired
 	}
-	if !slices.Contains(carrier.Available(), cfg.Carrier) {
-		return fmt.Errorf("%w: %s (available: %v)", ErrUnsupportedCarrier, cfg.Carrier, carrier.Available())
+	if !slices.Contains(carrier.Available(), cfg.Auth) {
+		return fmt.Errorf("%w: %s (available: %v)", ErrUnsupportedCarrier, cfg.Auth, carrier.Available())
 	}
 	if cfg.DNSServer == "" {
 		return ErrDNSServerRequired
@@ -443,53 +427,30 @@ func genRetry(ctx context.Context, fn func(context.Context) error) error {
 	return lastErr
 }
 
-// Gen creates cfg.Amount rooms for the configured carrier and writes each room ID to out.
-//
-//nolint:cyclop // transitional; refactor/universal-carrier replaces this with auth.RoomCreator dispatch
+// Gen creates cfg.Amount rooms for the configured auth provider and writes each room ID to out.
 func Gen(ctx context.Context, cfg Config, out func(string)) error {
-	switch cfg.Carrier {
-	case carrierJazz:
-		creator, ok := any(authSaluteJazz.Provider{}).(auth.RoomCreator)
-		if !ok {
-			return fmt.Errorf("%w: jazz auth provider does not implement RoomCreator", ErrUnsupportedCarrier)
-		}
-		for i := range cfg.Amount {
-			var roomID string
-			err := genRetry(ctx, func(ctx context.Context) error {
-				var err error
-				roomID, err = creator.CreateRoom(ctx, auth.Config{Name: names.Generate()})
-				if err != nil {
-					return fmt.Errorf("jazz CreateRoom: %w", err)
-				}
-				return nil
-			})
-			if err != nil {
-				return fmt.Errorf("gen jazz room %d: %w", i+1, err)
+	p, err := auth.Get(cfg.Auth)
+	if err != nil {
+		return fmt.Errorf("%w: %s", ErrUnsupportedCarrier, cfg.Auth)
+	}
+	creator, ok := p.(auth.RoomCreator)
+	if !ok {
+		return fmt.Errorf("%w: %s does not support room generation", ErrUnsupportedCarrier, cfg.Auth)
+	}
+	for i := range cfg.Amount {
+		var roomID string
+		err := genRetry(ctx, func(ctx context.Context) error {
+			var genErr error
+			roomID, genErr = creator.CreateRoom(ctx, auth.Config{Name: names.Generate()})
+			if genErr != nil {
+				return fmt.Errorf("CreateRoom: %w", genErr)
 			}
-			out(roomID)
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("gen room %d: %w", i+1, err)
 		}
-	case carrierWBStream:
-		creator, ok := any(authWBStream.Provider{}).(auth.RoomCreator)
-		if !ok {
-			return fmt.Errorf("%w: wbstream auth provider does not implement RoomCreator", ErrUnsupportedCarrier)
-		}
-		for i := range cfg.Amount {
-			var roomID string
-			err := genRetry(ctx, func(ctx context.Context) error {
-				var err error
-				roomID, err = creator.CreateRoom(ctx, auth.Config{Name: names.Generate()})
-				if err != nil {
-					return fmt.Errorf("wbstream CreateRoom: %w", err)
-				}
-				return nil
-			})
-			if err != nil {
-				return fmt.Errorf("gen wbstream room %d: %w", i+1, err)
-			}
-			out(roomID)
-		}
-	default:
-		return fmt.Errorf("%w: %s does not support room generation", ErrUnsupportedCarrier, cfg.Carrier)
+		out(roomID)
 	}
 	return nil
 }

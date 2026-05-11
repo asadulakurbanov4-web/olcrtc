@@ -84,6 +84,7 @@ func Run(
 	seiBatchSize int,
 	seiFragmentSize int,
 	seiAckTimeoutMS int,
+	engine, url, token string,
 ) error {
 	return RunWithReady(
 		ctx, linkName, transportName, carrierName, roomURL, keyHex, clientID, localAddr,
@@ -92,6 +93,7 @@ func Run(
 		videoQRSize, videoQRRecovery, videoCodec, videoTileModule, videoTileRS,
 		vp8FPS, vp8BatchSize,
 		seiFPS, seiBatchSize, seiFragmentSize, seiAckTimeoutMS,
+		engine, url, token,
 	)
 }
 
@@ -125,6 +127,7 @@ func RunWithReady(
 	seiBatchSize int,
 	seiFragmentSize int,
 	seiAckTimeoutMS int,
+	engine, url, token string,
 ) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -143,6 +146,7 @@ func RunWithReady(
 		videoQRSize, videoQRRecovery, videoCodec, videoTileModule, videoTileRS,
 		vp8FPS, vp8BatchSize,
 		seiFPS, seiBatchSize, seiFragmentSize, seiAckTimeoutMS,
+		engine, url, token,
 	); err != nil {
 		return err
 	}
@@ -181,11 +185,15 @@ func (c *Client) bringUpLink(
 	videoTileModule, videoTileRS int,
 	vp8FPS, vp8BatchSize int,
 	seiFPS, seiBatchSize, seiFragmentSize, seiAckTimeoutMS int,
+	engine, url, token string,
 ) error {
 	ln, err := link.New(ctx, linkName, link.Config{
 		Transport:       transportName,
 		Carrier:         carrierName,
 		RoomURL:         roomURL,
+		Engine:          engine,
+		URL:             url,
+		Token:           token,
 		ClientID:        c.clientID,
 		Name:            names.Generate(),
 		OnData:          c.onData,

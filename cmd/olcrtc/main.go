@@ -36,7 +36,10 @@ type config struct {
 	mode            string
 	link            string
 	transport       string
-	carrier         string
+	auth            string
+	engine          string
+	url             string
+	token           string
 	roomID          string
 	clientID        string
 	socksPort       int
@@ -175,7 +178,10 @@ func parseFlagsFrom(args []string, errorHandling flag.ErrorHandling) (config, er
 	fs.StringVar(&cfg.mode, "mode", "", "Mode: srv or cnc")
 	fs.StringVar(&cfg.link, "link", "", "Link: direct (p2p connection type)")
 	fs.StringVar(&cfg.transport, "transport", "", "Transport: datachannel, videochannel, seichannel")
-	fs.StringVar(&cfg.carrier, "carrier", "", "Carrier: telemost, jazz, wbstream")
+	fs.StringVar(&cfg.auth, "auth", "", "Auth provider: telemost, jazz, wbstream, none")
+	fs.StringVar(&cfg.engine, "engine", "", "Engine (required when -auth none): livekit, goolom, salutejazz")
+	fs.StringVar(&cfg.url, "url", "", "SFU WebSocket URL (required when -auth none)")
+	fs.StringVar(&cfg.token, "token", "", "Access token (required when -auth none)")
 	fs.StringVar(&cfg.roomID, "id", "", "Room ID")
 	fs.StringVar(&cfg.clientID, "client-id", "", "Client ID: binds one srv to one cnc (required)")
 	fs.IntVar(&cfg.socksPort, "socks-port", 0, "SOCKS5 port (client only)")
@@ -252,11 +258,14 @@ func loadNames(dataDir string) error {
 
 func toSessionConfig(cfg config) session.Config {
 	return session.Config{
-		Mode:            cfg.mode,
-		Link:            cfg.link,
-		Transport:       cfg.transport,
-		Carrier:         cfg.carrier,
-		RoomID:          cfg.roomID,
+		Mode:      cfg.mode,
+		Link:      cfg.link,
+		Transport: cfg.transport,
+		Auth:      cfg.auth,
+		Engine:    cfg.engine,
+		URL:       cfg.url,
+		Token:     cfg.token,
+		RoomID:    cfg.roomID,
 		ClientID:        cfg.clientID,
 		KeyHex:          cfg.keyHex,
 		SOCKSHost:       cfg.socksHost,

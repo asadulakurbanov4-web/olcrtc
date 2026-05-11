@@ -28,6 +28,10 @@ type Config struct {
 	Transport       string
 	Carrier         string
 	RoomURL         string
+	// Engine, URL, Token are forwarded for the "none" auth carrier.
+	Engine          string
+	URL             string
+	Token           string
 	ClientID        string
 	Name            string
 	OnData          func([]byte)

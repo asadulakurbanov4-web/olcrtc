@@ -36,6 +36,11 @@ type Transport interface {
 type Config struct {
 	Carrier         string
 	RoomURL         string
+	// Engine, URL, Token are forwarded to carrier.Config for the "none" auth
+	// carrier (direct engine access without a service-specific auth flow).
+	Engine          string
+	URL             string
+	Token           string
 	ClientID        string
 	Name            string
 	OnData          func([]byte)

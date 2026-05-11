@@ -10,6 +10,31 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
+// registerDirect registers a carrier that skips auth entirely — the caller
+// supplies the engine name, SFU URL, and access token directly via
+// carrier.Config.Engine / carrier.Config.URL / carrier.Config.Token.
+func registerDirect(carrierName string) {
+	carrier.Register(carrierName, func(ctx context.Context, cfg carrier.Config) (carrier.Session, error) {
+		engineName := cfg.Engine
+		if engineName == "" {
+			engineName = "livekit"
+		}
+		sess, err := engine.New(ctx, engineName, engine.Config{
+			URL:       cfg.URL,
+			Token:     cfg.Token,
+			Name:      cfg.Name,
+			OnData:    cfg.OnData,
+			DNSServer: cfg.DNSServer,
+			ProxyAddr: cfg.ProxyAddr,
+			ProxyPort: cfg.ProxyPort,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("engine new: %w", err)
+		}
+		return &engineSession{session: sess}, nil
+	})
+}
+
 // registerEngineAuth registers a carrier name that resolves credentials
 // through an auth provider and connects via the engine the auth provider
 // reports.
