@@ -69,20 +69,24 @@ fi
 echo "[+] Using Podman"
 echo ""
 echo "Select carrier:"
-echo "  1) telemost"
-echo "  2) jazz"
-echo "  3) wbstream"
-read -p "Enter choice [1-3, default: 3]: " CARRIER_CHOICE
+echo "  1) jitsi"
+echo "  2) telemost"
+echo "  3) jazz"
+echo "  4) wbstream"
+read -p "Enter choice [1-4, default: 1]: " CARRIER_CHOICE
 
 case "$CARRIER_CHOICE" in
-    1)
+    2)
         CARRIER="telemost"
         ;;
-    2)
+    3)
         CARRIER="jazz"
         ;;
-    *)
+    4)
         CARRIER="wbstream"
+        ;;
+    *)
+        CARRIER="jitsi"
         ;;
 esac
 
@@ -137,9 +141,13 @@ if [ "$CARRIER" = "jazz" ]; then
             ;;
     esac
 else
-    read -p "Enter Room ID: " ROOM_ID
+    if [ "$CARRIER" = "jitsi" ]; then
+        read -p "Enter Jitsi room URL (https://host/room or host/room): " ROOM_ID
+    else
+        read -p "Enter Room ID: " ROOM_ID
+    fi
     if [ -z "$ROOM_ID" ]; then
-        echo "[X] Room ID cannot be empty"
+        echo "[X] Room ID/URL cannot be empty"
         exit 1
     fi
 fi
@@ -425,7 +433,7 @@ echo ""
 echo "Container name: $CONTAINER_NAME"
 echo "Carrier:        $CARRIER"
 echo "Transport:      $TRANSPORT"
-echo "Room ID:        $ROOM_ID"
+echo "Room ID/URL:    $ROOM_ID"
 echo "Encryption key: $KEY"
 echo ""
 TRANSPORT_PAYLOAD=""

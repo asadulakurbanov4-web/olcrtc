@@ -73,20 +73,24 @@ fi
 echo "[+] Using Podman"
 echo ""
 echo "Select auth provider:"
-echo "  1) telemost"
-echo "  2) jazz"
-echo "  3) wbstream"
-read -p "Enter choice [1-3, default: 3]: " AUTH_CHOICE
+echo "  1) jitsi"
+echo "  2) telemost"
+echo "  3) jazz"
+echo "  4) wbstream"
+read -p "Enter choice [1-4, default: 1]: " AUTH_CHOICE
 
 case "$AUTH_CHOICE" in
-    1)
+    2)
         AUTH="telemost"
         ;;
-    2)
+    3)
         AUTH="jazz"
         ;;
-    *)
+    4)
         AUTH="wbstream"
+        ;;
+    *)
+        AUTH="jitsi"
         ;;
 esac
 
@@ -118,10 +122,14 @@ esac
 echo "[*] Using transport: $TRANSPORT"
 echo ""
 
-read -p "Enter Room ID: " ROOM_ID
+if [ "$AUTH" = "jitsi" ]; then
+    read -p "Enter Jitsi room URL (https://host/room or host/room): " ROOM_ID
+else
+    read -p "Enter Room ID: " ROOM_ID
+fi
 
 if [ -z "$ROOM_ID" ]; then
-    echo "[X] Room ID cannot be empty"
+    echo "[X] Room ID/URL cannot be empty"
     exit 1
 fi
 
@@ -380,7 +388,7 @@ echo ""
 echo "Container name: $CONTAINER_NAME"
 echo "Auth:           $AUTH"
 echo "Transport:      $TRANSPORT"
-echo "Room ID:        $ROOM_ID"
+echo "Room ID/URL:    $ROOM_ID"
 if [ -n "$SOCKS_USER" ]; then
 echo "SOCKS5 proxy:   $SOCKS_IP:$SOCKS_PORT (auth: $SOCKS_USER)"
 else

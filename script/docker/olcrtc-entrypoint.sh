@@ -55,7 +55,7 @@ case "$mode" in
     srv|cnc) ;;
     *) die "set OLCRTC_MODE to srv or cnc" ;;
 esac
-[ -n "$carrier" ] || die "set OLCRTC_CARRIER (e.g. telemost, jazz, wbstream)"
+[ -n "$carrier" ] || die "set OLCRTC_CARRIER (e.g. jitsi, telemost, jazz, wbstream)"
 [ -n "$transport" ] || die "set OLCRTC_TRANSPORT (e.g. datachannel, videochannel, seichannel, vp8channel)"
 
 make_key() {
