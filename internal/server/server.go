@@ -133,6 +133,14 @@ type Config struct {
 	OnTraffic TrafficFunc
 	// OnHealth fires when liveness/reconnect status changes. Nil means no-op.
 	OnHealth HealthFunc
+
+	// Allowed, if non-nil, is polled every EnforceInterval to disconnect live
+	// sessions whose deviceID is no longer permitted (revocation sweep). New
+	// handshakes are gated by AuthHook; this catches already-connected clients.
+	Allowed func(deviceID string) bool
+	// EnforceInterval is the revocation sweep cadence. Ignored if Allowed is nil
+	// or the value is <= 0.
+	EnforceInterval time.Duration
 }
 
 // Run starts the server with the given configuration.
@@ -200,9 +208,55 @@ func Run(ctx context.Context, cfg Config) error {
 		s.closeSession()
 	}()
 
+	if cfg.Allowed != nil && cfg.EnforceInterval > 0 {
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			s.enforceLoop(runCtx, cfg.Allowed, cfg.EnforceInterval)
+		}()
+	}
+
 	s.serve(runCtx)
 
 	return nil
+}
+
+// enforceLoop periodically disconnects live sessions whose deviceID is no longer
+// allowed. New/reconnecting clients are already gated by the handshake AuthHook;
+// this sweep catches clients that connected while still permitted.
+func (s *Server) enforceLoop(ctx context.Context, allowed func(string) bool, interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			s.enforceOnce(allowed)
+		}
+	}
+}
+
+func (s *Server) enforceOnce(allowed func(string) bool) {
+	// Peer mode (production: datachannel supports peer routing): kick each
+	// revoked peer. Collect under RLock, then act — removePeerSession locks itself.
+	var peerVictims []string
+	s.sessMu.RLock()
+	for id, ps := range s.peerSessions {
+		if ps.deviceID != "" && !allowed(ps.deviceID) {
+			peerVictims = append(peerVictims, id)
+		}
+	}
+	s.sessMu.RUnlock()
+
+	for _, id := range peerVictims {
+		logger.Infof("authz: disconnecting revoked peer session %s", id)
+		s.removePeerSession(id, "revoked")
+	}
+
+	// Single-link mode has no safe live-teardown (closeSession would not
+	// reinstall without a transport reconnect, breaking the link). The lone
+	// client is gated by AuthHook on its next (re)connect instead.
 }
 
 func setupCipher(keyHex string) (*crypto.Cipher, error) {
@@ -806,6 +860,7 @@ func (s *Server) recordPong(h control.Health)    { s.health.RecordPong(h) }
 func (s *Server) recordMissed(missed int)        { s.health.RecordMissed(missed) }
 func (s *Server) recordUnhealthy(missed int)     { s.health.RecordUnhealthy(missed) }
 func (s *Server) recordReconnect()               { s.health.RecordReconnect() }
+func (s *Server) recordBytes(n int64)            { s.health.RecordBytes(n) }
 
 func (s *Server) shutdown() {
 	if s.done != nil {
@@ -905,6 +960,11 @@ func (s *Server) dispatch(stream *smux.Stream, req ConnectRequest, sessionID str
 	}
 	if s.onTraffic != nil {
 		s.onTraffic(sessionID, addr, bytesIn, bytesOut)
+	}
+	// Feed volume for liveness volume_aware / stall detection (TSPU patch).
+	total := int64(bytesIn) + int64(bytesOut)
+	if total > 0 {
+		s.recordBytes(total)
 	}
 }
 

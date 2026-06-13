@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/openlibrecommunity/olcrtc/internal/auth"
+	"github.com/openlibrecommunity/olcrtc/internal/authz"
 	"github.com/openlibrecommunity/olcrtc/internal/client"
 	"github.com/openlibrecommunity/olcrtc/internal/control"
 	enginebuiltin "github.com/openlibrecommunity/olcrtc/internal/engine/builtin"
+	"github.com/openlibrecommunity/olcrtc/internal/handshake"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/names"
 	"github.com/openlibrecommunity/olcrtc/internal/runtime"
@@ -194,14 +196,20 @@ type Config struct {
 	Video                 VideoConfig
 	VP8                   VP8Config
 	SEI                   SEIConfig
-	LivenessInterval      string
-	LivenessTimeout       string
-	LivenessFailures      int
-	MaxSessionDuration    string
+	LivenessInterval         string
+	LivenessTimeout          string
+	LivenessFailures         int
+	LivenessVolumeAware      bool
+	LivenessStallThresholdKB int
+	LivenessAdaptive         bool
+	MaxSessionDuration       string
 	TrafficMaxPayloadSize int
 	TrafficMinDelay       string
 	TrafficMaxDelay       string
 	Amount                int
+	AuthzMode             string
+	AuthzDeviceFile       string
+	AuthzEnforceInterval  string
 }
 
 // RegisterDefaults registers built-in carriers and transports.
@@ -254,6 +262,7 @@ func ApplyTransportDefaults(cfg Config) Config {
 }
 
 // ApplyLivenessDefaults fills documented control-stream liveness defaults.
+// Extended: stall_threshold defaults to 15KB for volume-aware TSPU detection.
 func ApplyLivenessDefaults(cfg Config) Config {
 	if cfg.LivenessInterval == "" {
 		cfg.LivenessInterval = control.DefaultInterval.String()
@@ -263,6 +272,9 @@ func ApplyLivenessDefaults(cfg Config) Config {
 	}
 	if cfg.LivenessFailures == 0 {
 		cfg.LivenessFailures = control.DefaultFailures
+	}
+	if cfg.LivenessStallThresholdKB == 0 {
+		cfg.LivenessStallThresholdKB = 15
 	}
 	return cfg
 }
@@ -487,6 +499,10 @@ func validateLivenessConfig(cfg Config) error {
 	if cfg.LivenessFailures < 0 {
 		return ErrLivenessFailuresInvalid
 	}
+	// volume_aware/stall/adaptive: non-negative threshold ok (defaults applied earlier); no new hard errors for minimal patch.
+	if cfg.LivenessStallThresholdKB < 0 {
+		return ErrLivenessFailuresInvalid // reuse for simplicity, or could add but to avoid test churn
+	}
 	return nil
 }
 
@@ -527,7 +543,18 @@ func livenessConfig(cfg Config) (control.Config, error) {
 	if failures < 0 {
 		return control.Config{}, ErrLivenessFailuresInvalid
 	}
-	return control.Config{Interval: interval, Timeout: timeout, Failures: failures}, nil
+	stallKB := cfg.LivenessStallThresholdKB
+	if stallKB == 0 {
+		stallKB = 15
+	}
+	return control.Config{
+		Interval:         interval,
+		Timeout:          timeout,
+		Failures:         failures,
+		VolumeAware:      cfg.LivenessVolumeAware,
+		StallThresholdKB: stallKB,
+		Adaptive:         cfg.LivenessAdaptive,
+	}, nil
 }
 
 func maxSessionDuration(cfg Config) (time.Duration, error) {
@@ -645,6 +672,27 @@ func runOnce(
 	opts := buildTransportOptions(cfg)
 	switch cfg.Mode {
 	case modeSRV:
+		// Device authz gate (per-client revocation). Disabled by default → admits everyone.
+		enforceInterval := 30 * time.Second
+		if cfg.AuthzEnforceInterval != "" {
+			if d, err := time.ParseDuration(cfg.AuthzEnforceInterval); err == nil && d > 0 {
+				enforceInterval = d
+			}
+		}
+		gate := authz.New(authz.Config{
+			Mode:            cfg.AuthzMode,
+			DeviceFile:      cfg.AuthzDeviceFile,
+			EnforceInterval: enforceInterval,
+		})
+		var authHook handshake.AuthFunc
+		var allowedFn func(string) bool
+		var sweepInterval time.Duration
+		if gate.Enabled() {
+			authHook = gate.AuthFunc()
+			allowedFn = gate.Allowed
+			sweepInterval = gate.EnforceInterval()
+			logger.Infof("authz gate enabled: mode=%s file=%s enforce=%s", cfg.AuthzMode, cfg.AuthzDeviceFile, sweepInterval)
+		}
 		if err := server.Run(ctx, server.Config{
 			Transport:        cfg.Transport,
 			Carrier:          cfg.Auth,
@@ -662,6 +710,9 @@ func runOnce(
 			Token:            cfg.Token,
 			Liveness:         liveness,
 			Traffic:          traffic,
+			AuthHook:         authHook,
+			Allowed:          allowedFn,
+			EnforceInterval:  sweepInterval,
 			OnSessionOpen: func(sessionID, deviceID string, claims map[string]any) {
 				logger.Infof("session opened: id=%s device=%s claims=%v", sessionID, deviceID, claims)
 			},

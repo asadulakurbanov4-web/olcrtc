@@ -49,8 +49,17 @@ type File struct {
 	Gen       Gen       `yaml:"gen"`
 	Profiles  []Profile `yaml:"profiles"`
 	Failover  Failover  `yaml:"failover"`
+	Authz     Authz     `yaml:"authz"`
 	Data      string    `yaml:"data"`
 	Debug     bool      `yaml:"debug"`
+}
+
+// Authz gates client sessions by deviceID against a panel-written allowlist file.
+// Server-global (not per-profile) so it survives failover unchanged.
+type Authz struct {
+	Mode            string `yaml:"mode"`             // allowlist | denylist | off (default off)
+	DeviceFile      string `yaml:"device_file"`      // JSON allowlist the panel writes
+	EnforceInterval string `yaml:"enforce_interval"` // sweep cadence for live sessions, e.g. "30s"
 }
 
 // Profile is a failover entry that overrides top-level runtime fields.
@@ -147,10 +156,17 @@ type SEI struct {
 }
 
 // Liveness tunes the post-handshake control stream ping/pong checks.
+// Extended for volume-aware TSPU stall detection (per /tmp/liveness-supervisor-tspu-recs.md):
+// - volume_aware: enable bytes-since-pong + stall heuristics in control/health.
+// - stall_threshold_kb: after this many KB transferred, low throughput + missed pongs -> suspect/rotate.
+// - adaptive: allow dynamic shortening of interval on high volume or early stall signs.
 type Liveness struct {
-	Interval string `yaml:"interval"`
-	Timeout  string `yaml:"timeout"`
-	Failures int    `yaml:"failures"`
+	Interval         string `yaml:"interval"`
+	Timeout          string `yaml:"timeout"`
+	Failures         int    `yaml:"failures"`
+	VolumeAware      bool   `yaml:"volume_aware"`
+	StallThresholdKB int    `yaml:"stall_threshold_kb"`
+	Adaptive         bool   `yaml:"adaptive"`
 }
 
 // Lifecycle controls planned session rebuilds.
@@ -284,11 +300,17 @@ func Apply(dst session.Config, f File) session.Config {
 	dst.LivenessInterval = pickString(dst.LivenessInterval, f.Liveness.Interval)
 	dst.LivenessTimeout = pickString(dst.LivenessTimeout, f.Liveness.Timeout)
 	dst.LivenessFailures = pickInt(dst.LivenessFailures, f.Liveness.Failures)
+	dst.LivenessVolumeAware = dst.LivenessVolumeAware || f.Liveness.VolumeAware
+	dst.LivenessStallThresholdKB = pickInt(dst.LivenessStallThresholdKB, f.Liveness.StallThresholdKB)
+	dst.LivenessAdaptive = dst.LivenessAdaptive || f.Liveness.Adaptive
 	dst.MaxSessionDuration = pickString(dst.MaxSessionDuration, f.Lifecycle.MaxSessionDuration)
 	dst.TrafficMaxPayloadSize = pickInt(dst.TrafficMaxPayloadSize, f.Traffic.MaxPayloadSize)
 	dst.TrafficMinDelay = pickString(dst.TrafficMinDelay, f.Traffic.MinDelay)
 	dst.TrafficMaxDelay = pickString(dst.TrafficMaxDelay, f.Traffic.MaxDelay)
 	dst.Amount = pickInt(dst.Amount, f.Gen.Amount)
+	dst.AuthzMode = pickString(dst.AuthzMode, f.Authz.Mode)
+	dst.AuthzDeviceFile = pickString(dst.AuthzDeviceFile, f.Authz.DeviceFile)
+	dst.AuthzEnforceInterval = pickString(dst.AuthzEnforceInterval, f.Authz.EnforceInterval)
 	return dst
 }
 
@@ -331,6 +353,13 @@ func ApplyProfile(base session.Config, p Profile) session.Config {
 	dst.LivenessInterval = overlayString(dst.LivenessInterval, p.Liveness.Interval)
 	dst.LivenessTimeout = overlayString(dst.LivenessTimeout, p.Liveness.Timeout)
 	dst.LivenessFailures = overlayInt(dst.LivenessFailures, p.Liveness.Failures)
+	if p.Liveness.VolumeAware {
+		dst.LivenessVolumeAware = true
+	}
+	dst.LivenessStallThresholdKB = overlayInt(dst.LivenessStallThresholdKB, p.Liveness.StallThresholdKB)
+	if p.Liveness.Adaptive {
+		dst.LivenessAdaptive = true
+	}
 	dst.MaxSessionDuration = overlayString(dst.MaxSessionDuration, p.Lifecycle.MaxSessionDuration)
 	dst.TrafficMaxPayloadSize = overlayInt(dst.TrafficMaxPayloadSize, p.Traffic.MaxPayloadSize)
 	dst.TrafficMinDelay = overlayString(dst.TrafficMinDelay, p.Traffic.MinDelay)
