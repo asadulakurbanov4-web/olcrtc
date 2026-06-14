@@ -56,10 +56,13 @@ type File struct {
 
 // Authz gates client sessions by deviceID against a panel-written allowlist file.
 // Server-global (not per-profile) so it survives failover unchanged.
+// fail_mode + lkg_max_age implement last-known-good (prod default for paid per OlcPanel v2.1 §5.2).
 type Authz struct {
 	Mode            string `yaml:"mode"`             // allowlist | denylist | off (default off)
 	DeviceFile      string `yaml:"device_file"`      // JSON allowlist the panel writes
 	EnforceInterval string `yaml:"enforce_interval"` // sweep cadence for live sessions, e.g. "30s"
+	FailMode        string `yaml:"fail_mode"`        // lkg (prod) | open (diag) | closed
+	LkgMaxAge       string `yaml:"lkg_max_age"`      // e.g. "24h"; 0 or absent = no hard ceiling
 }
 
 // Profile is a failover entry that overrides top-level runtime fields.
@@ -311,6 +314,8 @@ func Apply(dst session.Config, f File) session.Config {
 	dst.AuthzMode = pickString(dst.AuthzMode, f.Authz.Mode)
 	dst.AuthzDeviceFile = pickString(dst.AuthzDeviceFile, f.Authz.DeviceFile)
 	dst.AuthzEnforceInterval = pickString(dst.AuthzEnforceInterval, f.Authz.EnforceInterval)
+	dst.AuthzFailMode = pickString(dst.AuthzFailMode, f.Authz.FailMode)
+	dst.AuthzLkgMaxAge = pickString(dst.AuthzLkgMaxAge, f.Authz.LkgMaxAge)
 	return dst
 }
 

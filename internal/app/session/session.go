@@ -210,6 +210,8 @@ type Config struct {
 	AuthzMode             string
 	AuthzDeviceFile       string
 	AuthzEnforceInterval  string
+	AuthzFailMode         string // lkg (prod default) | open | closed
+	AuthzLkgMaxAge        string // e.g. "24h" — hard ceiling for LKG staleness
 }
 
 // RegisterDefaults registers built-in carriers and transports.
@@ -679,10 +681,18 @@ func runOnce(
 				enforceInterval = d
 			}
 		}
+		lkgMax := time.Duration(0)
+		if cfg.AuthzLkgMaxAge != "" {
+			if d, err := time.ParseDuration(cfg.AuthzLkgMaxAge); err == nil && d > 0 {
+				lkgMax = d
+			}
+		}
 		gate := authz.New(authz.Config{
 			Mode:            cfg.AuthzMode,
 			DeviceFile:      cfg.AuthzDeviceFile,
 			EnforceInterval: enforceInterval,
+			FailMode:        cfg.AuthzFailMode,
+			LkgMaxAge:       lkgMax,
 		})
 		var authHook handshake.AuthFunc
 		var allowedFn func(string) bool
