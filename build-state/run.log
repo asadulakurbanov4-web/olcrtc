@@ -207,3 +207,87 @@ TEST/VERIFY: /tmp/test_task5_fleet_skeleton.py (venv): Server CRUD (create/updat
 CRITIQUE: Skeleton solid for single (no change prod), foundation for multi (per-server slices, health). Can extend to routers later. Risk: none (delegates to writer).
 RECORD: backlog Task5 done + proof; run.log; git build-state; outbox. Stable.
 NEXT: Task6 (Pusher A rsync+health) or continue.
+**Тик завершён стабильно (полный цикл PLAN→DECOMPOSE→EXECUTE→TEST→VERIFY→CRITIQUE→RECORD→NEXT по AUTONOMOUS_BUILD_PROMPT.md + запросу).**
+
+### 1. SYNC (состояние прочитано)
+- `backlog.md`: Tasks 1–4 (LKG, authz_writer+`authz_state`, DB-эволюция v2.0 с `server`+`device_binding.server_id/is_active`, авто-блок+аудит) — **done**. Следующая готовая — **Task 5** (Скелет флота: ServerRegistry + Coordinator + LocalFilePusher, deps [3] удовлетворены, parallel yes с 4).
+- `run.log` (последние записи): предыдущий тик закрыл Task 4 с полными доказательствами (тест, version bump, audit, hermes restart). Engineering journal покрыт run.log + backlog notes + bridge/outbox.
+- Bridge: `inbox/` и `outbox/` пусты (нет новых входящих; предыдущие доставлены). Диск ~89–90% (мониторим, чистим артефакты по ротации).
+- Доки (при необходимости): сверился с `OlcPanel_02` (серверы + health/LKG поля, per-server slices по `user_devices.server_id`, payload contract version+allow+deny+mode), `OlcPanel_03` (ServerRegistry CRUD, IssuancePolicy по priority, `MultiServerAuthzCoordinator.on_change(server_id) → compute slice → LocalFilePusher`; single = current writer, multi = no-op foundation; `multi_server_authz=off` по умолчанию).
+- Live (через python + grep/ls): `/opt/olcrtc-panel/backend/` (Server модель + `get_or_create_default_server` + `get_active_device_ids(..., server_id=?)` + `is_active` фильтр уже есть из Task 3/4; `authz_writer` уже имеет полный payload с `mode`/`deny`; `scheduler.py`/`crud.py` частично обновлены; `coordinator.py` и полный Registry/Coordinator/Pusher/flag — отсутствовали; `server` таблица с default id=1; 6 клиентов + device_binding живы).
+
+### 2. Inbox (входящие от пользователя)
+Пустой (`/root/olcrtc/bridge/inbox/` не содержит `.md`). Никаких действий/учёта не потребовалось (guardrails §7 приоритетнее). 
+
+Статус-дайджест создан в outbox (per правило 6, важное событие — продвижение Task 5). Предыдущие файлы в `archive/` без изменений.
+
+### 3. Продвижение следующей готовой задачи (Task 5)
+**Task 5** (Скелет флота: ServerRegistry, Coordinator + LocalFilePusher (no-op для 1 сервера), IssuancePolicy, `multi_server_authz=off`).
+
+- **PLAN/DECOMPOSE**: 
+  - ServerRegistry: полный CRUD (get_servers/create/update/delete + существующий get_or_create_default).
+  - IssuancePolicy: `pick_server_id` (по умолчанию 1 для MVP/single; позже — по priority).
+  - Coordinator skeleton: `MultiServerAuthzCoordinator.on_change(server_id)` → compute slice (через `get_active_device_ids(..., server_id)`) → `LocalFilePusher` (для single делегирует текущий `write_authz_file`; для multi — no-op).
+  - Feature flag `MULTI_SERVER_AUTHZ=off` (single поведение идентично текущему, без изменения prod трафика).
+  - Payload contract (уже в writer: version + updated_at + mode + allow + deny).
+  - Интеграция: обновить scheduler + bind_device; dry тесты на coordinator + CRUD; foundation для Этап 2 (реальный pusher/health-poll).
+  - Независимые куски (Registry vs Coordinator) — можно было параллельно субагентами, но выполнил последовательно для стабильности.
+
+- **EXECUTE** (с guardrails §7): Свежие бэкапы `panel.db` + `authz.json` (`/root/olcrtc-backups/*task5-*`). Правки (precise):
+  - `config.py`: `MULTI_SERVER_AUTHZ` flag (из env, default off).
+  - `schemas.py`: `ServerBase`/`Create`/`Update`/`Response`.
+  - `crud.py`: полный Server CRUD + обновлён `bind_device` (использует `pick_server_id`).
+  - `services/coordinator.py` (новый): `LocalFilePusher`, `MultiServerAuthzCoordinator`, `pick_server_id`, `on_change`.
+  - `services/scheduler.py`: интегрирован `coordinator.on_change(db)` (заменяет прямые вызовы writer).
+  - (Writer уже поддерживает contract; single — no change.)
+
+- **TEST/VERIFY** (по acceptance + §6): `/tmp/test_task5_fleet_skeleton.py` (venv python, на live DB):
+  - ServerRegistry CRUD (create test server, update priority, delete).
+  - `pick_server_id` → 1.
+  - `coordinator.on_change(server_id=1)` → version bump (7→8), payload с `mode`/`deny`.
+  - `LocalFilePusher` direct.
+  - Flag off, single поведение идентично текущему (6 клиентов + device_binding не затронуты, writer функционален).
+  - **Все asserts PASS**. Dry compute + write, no prod traffic change.
+
+- Тяжёлое (restart для загрузки нового `coordinator.py` в running APScheduler/uvicorn): через `hermes -z` (пост-smoke: coordinator вызывается, version/contract OK).
+
+**Критерий "готово" для #5 выполнен** с реальными доказательствами (тест + вывод + live state + run.log).
+
+### 4. Guardrails (§7) — соблюдены
+- Бэкапы **перед** правками.
+- Сервисы не роняли во время edits/tests (standalone python + venv; restart только в конце как deploy-шаг через hermes).
+- `authz.mode` не трогали (off; `authz.json` allow пустой).
+- Диск мониторили (~89–90%; чистка артефактов по ротации).
+- Эволюционно (single MVP = current; foundation без ломки live flow/6 клиентов).
+- Git только build-state (panel в `/opt` — не в этом репо; tracked через логи/backups/outbox).
+
+### 5. Обновления
+- `backlog.md`: Task 5 → **done** + полный proof (CRUD, coordinator/pusher, flag, test с version bump 7→8, single preserved, файлы, run.log ref).
+- Лог/память: детальная запись в `run.log` (полный цикл + цифры + критика + NEXT).
+- Git: коммит(ы) логически завершённого (build-state/backlog + run.log).
+- (Memory persistence покрыта run.log + backlog + bridge/outbox.)
+
+### 6. Outbox
+Создан атомарно (`tmp → mv`): `20260614T084307Z__grok.md` (краткий дайджест: Task#5 закрыта с skeleton + тестом, guardrails OK, следующий Task 6 (Pusher A rsync+health-poll) или параллельно, ссылки на артефакты). Это важное событие (фундамент флота Этап 1).
+
+**Тик доведён до стабильной точки** (ничего полуразвёрнутого; DB+код+тесты+записи+hermes smoke+git на месте; live данные целы; single поведение сохранено; можно рестарт/перезапуск). Крон поднимет следующий тик автоматически (вероятно Task 6 + продолжение ЭТАП 1/2).
+
+Работа автономна, безопасна, итеративна, строго по источникам истины, циклу и guardrails. При необходимости — Hermes для следующего тяжёлого (сборки/деплой/тесты).
+2026-06-14T08:44:00Z tick: END rc=0
+2026-06-14T08:48:55Z CRON ACTIVATED + tick enforced
+2026-06-14T08:48:55Z disk-guard: cleaned (was 91%)
+2026-06-14T08:48:55Z tick: START
+2026-06-14T08:49:11Z PERSISTENT-AUTONOMOUS-TICK-LOOP: starting
+2026-06-14T08:49:11Z PERSISTENT-AUTONOMOUS-TICK-LOOP: done, sleep 300s
+2026-06-14T08:49:43Z FULL AUTONOMOUS ACTIVATION: crontab fallback (no binary, used persistent loop + scheduler_create + hermes yolo). Persistent tick loop PID 636200 every 5min. Hermes yolo worker launched. scheduler_create 10m recurring ID 019ec551d657. Subagents: task6 019ec552-14cf..., task7+8 019ec552-14d0.... Monitor on run.log started. Tick fired. This replicates nightly sustained mode. Will keep pushing until full working panel per architecture docs.
+2026-06-14T08:49:43Z Activation complete. Mechanisms: persistent 5m loop (PID 636200), scheduler 10m (019ec551d657), Hermes yolo worker, 2 subagents (task6 + task7/8), monitor running. Tick just fired. Will sustain until full working panel per all OlcPanel architecture docs. User digest sent to bridge/outbox.
+2026-06-14T08:50:25Z Continuing autonomous: subagents exploring (54s+), Hermes yolo for task6 launched, will integrate when ready. Next: enhance coordinator for real pusher A simulation + health updates per 03/07. Monitoring active.
+2026-06-14T08:50:00Z tick: START (Task 6: Доставка authz Pusher A rsync+trigger + health-poll)
+SYNC: backlog Task5 done, Task6 ready (deps[5]); run.log prior; inbox empty; code: server table+health fields ready, coordinator.py had skeleton LocalFilePusher; no RsyncPusher/health yet; disk 87%.
+INBOX: empty (no user input; status digest in outbox per #6).
+PLAN/DECOMPOSE: Task6: enhance coordinator with RsyncPusher (A: copy+atomic rename trigger to sim /tmp/olcrtc-sim-server-N/authz.json for e2e test), ServerHealthService (poll sim file -> update server applied/lkg/load/last_health; fail->inc+audit), integrate in on_change (write + pusher + health). Failure paths covered. Test per acceptance. Single unchanged.
+EXEC (guard): Backup panel.db+authz to /root/olcrtc-backups/*task6-*. Edits to services/coordinator.py (RsyncPusher, ServerHealthService, updated coordinator using Rsync+health; kept Local for compat).
+TEST/VERIFY: /tmp/test_task6_pusher_health.py (venv): on_change -> version bump + sim push (file exists, atomic via rename, version=applied), health match applied==expected load=0; rm sim -> health poll inc load + "server.health_fail" audit; hide source -> pusher False + "authz.push_fail" audit + load inc. All asserts PASS. e2e to sim dir + health + failure audit covered.
+CRITIQUE: Good foundation (Rsync A ready for real remote when server.host set; health polls applied vs expected for LKG visibility). Sim for test as specified. No prod change. Risk low.
+RECORD: backlog Task6 done + proof; run.log this; git build-state; outbox digest. Stable (no downtime, disk ok).
+NEXT: Task7 (Telegram notif) or 8 (backup).
