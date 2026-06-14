@@ -75,8 +75,8 @@
 
 ## Инфраструктура / Крон / Общее (параллельно где возможно)
 16 | Крон-тик + lock + resume + scheduled checks (soak, backup, alert LKG stale) | 1 | done (partial) | [] | no | tick.sh + flock + RESUME_PROMPT; crontab entry; ежедневный backup timer; health-soak туннеля; alert load_errors or lkg age. | Крон тик работает (run.log показывает START/END); lock предотвращает дубли; backups ротируются. | hermes | tick.sh / build-state уже есть (из bootstrap); проверить crontab -l и добавить если нет. 
-17 | Git hygiene + CI smoke (для Go + panel) | 1 | todo | [] | no | feat/* ветки для Go; коммиты логические; panel repo push; pre-commit vet/test; no secrets. | git status clean; push to asadulakurbanov4-web/olcRTC-panel (panel); go test on CI if any. | self | Не пуш broken в main.
-18 | Финальный отчёт + процедура активации гейта | 3 | todo | [1-15] | no | /root/olcrtc/build-state/FINAL_REPORT.md: что сделано + доказательства (тесты, логи, health), что требует человека (активация mode=allowlist после bind owner device + verify allow in json), как откатить (mv backups), sync docs. | Отчёт существует, все этапы closed с доказ-вами; туннель жив (selftest OK). | self | Критерий завершения §11 промта.
+ | [] | no | feat/* ветки для Go; коммиты логические; panel repo push; pre-commit vet/test; no secrets. | git status clean; push to asadulakurbanov4-web/olcRTC-panel (panel); go test on CI if any. | self | Не пуш broken в main.
+ | [1-15] | no | /root/olcrtc/build-state/FINAL_REPORT.md: что сделано + доказательства (тесты, логи, health), что требует человека (активация mode=allowlist после bind owner device + verify allow in json), как откатить (mv backups), sync docs. | Отчёт существует, все этапы closed с доказ-вами; туннель жив (selftest OK). | self | Критерий завершения §11 промта.
 
 ## Блокеры / Риски (живые)
 - Диск ~100% (мониторить, чистить артефакты сборок /tmp/olcrtc* / старые бэкапы по ротации). Текущий: 86% после чистки.
