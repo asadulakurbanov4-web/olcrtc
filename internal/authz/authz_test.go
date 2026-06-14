@@ -133,7 +133,7 @@ func TestReloadOnMtimeChange(t *testing.T) {
 		t.Fatal("initial state wrong")
 	}
 	// Rewrite the file with a different allowlist and bump mtime → reload.
-	if err := os.WriteFile(p, []byte(`{"version":1,"allow":["dev2"]}`), 0o600); err != nil {
+	if err := os.WriteFile(p, []byte(`{"version":2,"allow":["dev2"]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	future := time.Now().Add(2 * time.Second)
