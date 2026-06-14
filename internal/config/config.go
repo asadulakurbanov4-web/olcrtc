@@ -63,6 +63,7 @@ type Authz struct {
 	EnforceInterval string `yaml:"enforce_interval"` // sweep cadence for live sessions, e.g. "30s"
 	FailMode        string `yaml:"fail_mode"`        // lkg (prod) | open (diag) | closed
 	LkgMaxAge       string `yaml:"lkg_max_age"`      // e.g. "24h"; 0 or absent = no hard ceiling
+	AdminAddr       string `yaml:"admin_addr"`       // if non-empty: start admin HTTP on this addr
 }
 
 // Profile is a failover entry that overrides top-level runtime fields.
@@ -316,6 +317,7 @@ func Apply(dst session.Config, f File) session.Config {
 	dst.AuthzEnforceInterval = pickString(dst.AuthzEnforceInterval, f.Authz.EnforceInterval)
 	dst.AuthzFailMode = pickString(dst.AuthzFailMode, f.Authz.FailMode)
 	dst.AuthzLkgMaxAge = pickString(dst.AuthzLkgMaxAge, f.Authz.LkgMaxAge)
+	dst.AuthzAdminAddr = pickString(dst.AuthzAdminAddr, f.Authz.AdminAddr)
 	return dst
 }
 

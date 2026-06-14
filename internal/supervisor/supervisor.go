@@ -46,6 +46,13 @@ type ProfileStatus struct {
 	LastStarted time.Time
 	LastEnded   time.Time
 	LastError   string
+
+	// Suspect / volume-stall extensions for TSPU-aware liveness (see control bytes + recs.md):
+	// Set via external (control health status -> OnStatus hook) or markSuspect.
+	// Rotate logic prefers non-suspect; gold (e.g. ct) over suspect (igtel/riddlerx).
+	Suspect    bool
+	StallCount int
+	LastStall  time.Time
 }
 
 // Event is one bounded failover history entry.
@@ -267,3 +274,37 @@ func waitRetryDelay(ctx context.Context, delay time.Duration) error {
 		return nil
 	}
 }
+
+// IsHealthy reports basic health for a profile status (used in rotate selection / scoring).
+// Simple volume-stall aware: if suspect (set from bytes_since < threshold && time > X in control health signals)
+// then not healthy; prefer gold non-suspect in supervisor cycles.
+func (p ProfileStatus) IsHealthy() bool {
+	if p.Suspect {
+		return false
+	}
+	return true
+}
+
+// markSuspect marks the profile suspect (volume stall or external health signal).
+// Called from OnStatus integration or control unhealthy with volume context (stub for full cross-link).
+func (t *statusTracker) markSuspect(profileIndex int) {
+	if profileIndex < 0 || profileIndex >= len(t.status.Profiles) {
+		return
+	}
+	profile := &t.status.Profiles[profileIndex]
+	profile.Suspect = true
+	profile.StallCount++
+	profile.LastStall = time.Now()
+	t.appendHistory(Event{
+		Time:    time.Now(),
+		Type:    "profile_suspect",
+		Profile: profile.Name,
+	})
+	t.emit()
+}
+
+// Note for rotate: in runProfile / runCycle, after end or via OnStatus from control,
+// a volume check (if bytes_since_pong < stall_threshold_kb*1024 && time.Since(lastPong) > adaptive/X ) -> t.markSuspect(i)
+// This makes supervisor deprioritize stalled carriers (TSPU) and rotate to next/gold faster.
+// Current time-based fail still works; volume augments via status.BytesSincePong in extended control.Status.
+

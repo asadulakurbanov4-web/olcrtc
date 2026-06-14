@@ -228,7 +228,19 @@ olcrtc://jitsi?datachannel@https://meet.small-dm.ru/myroom#d823fa01cb3e0609b6732
 olcrtc://jitsi?datachannel@https://meet.handyweb.org/myroom#d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799$RU / olc free sub
 ```
 
+**Рекомендуемые gold carriers (all-operators priority, validated night 2026-06, P3/P4):** 
+
+```text
+olcrtc://jitsi?datachannel@https://conference.ct.placetime.team/olcrtc-gold-ct1#<KEY>$all-operators-gold-ct-placetime / primary
+```
+
+```text
+olcrtc://jitsi?datachannel@https://meet.cryptopro.ru/olcrtc-gold-crypto#<KEY>$all-operators-gold-cryptopro / secondary (ANON advertised)
+```
+
 `<RoomID>` для jitsi - полный URL комнаты в формате `https://host/room` (или `host/room`). Поддерживается любой self-hosted Jitsi Meet инстанс без аутентификации; для публичных серверов (`meet.small-dm.ru`, `meet1.arbitr.ru`, `meet.handyweb.org`, `meet.jit.si`) тот же формат. **Обязательно проверьте, какой сервер доступен в вашей сети.**
+
+**Важно (новая практика):** Для платных подписок бери домены из [good-carriers.md](good-carriers.md) (all-operators first). Перед использованием в URI — `./script/validate-carrier.sh <domain>` (цель: ANONYMOUS в stream:features). См. multi примеры в docs/examples/subs-multi-gold.txt (генерируются из good-carriers). Bare IP не работают (TLS). См. также failover в configuration.md.
 
 ### Эквивалент YAML
 

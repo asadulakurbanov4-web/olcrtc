@@ -30,6 +30,17 @@ done
 
 echo "=== OlcRTC Server Deployment Script ==="
 echo ""
+echo "For production/reliable paid VPN: use validated good carriers from docs/good-carriers.md"
+echo "First validate candidates with: ./script/validate-carrier.sh <IP-or-domain> (integrates ANONYMOUS/stream:features probe + temp config)"
+echo "Prefer domains (bare IPs fail TLS - see good-carriers.md + /tmp/validate*.log results)."
+echo "GOLD all-ops (validated PROMISING/ANONYMOUS 2026-06-12, jitsi datachannel first):"
+echo "  conference.ct.placetime.team (5.178.85.63 #1 gold), meet.cryptopro.ru (193.37), meeting.dks.lanit.ru (195.128),"
+echo "  meet.picasso-tech.ru, meet.greenfinance.ru (128.75.255.25), conf.movistagroup.ru, meet.ars.ru etc. (see good-carriers.md for full live + mappings)"
+echo "Megafon fallback: meet1.arbitr.ru (84.201.184.28)"
+echo "P3/SUB3 done: scripts updated with new domains + validate integration. Run validate before prod choice."
+echo "TIP: Always prefer DOMAIN names (not bare IPs) — TLS certs are for domains. See good-carriers.md 'Tooling' section."
+echo ""
+echo ""
 echo "[*] Using branch: $BRANCH"
 echo ""
 
@@ -128,21 +139,41 @@ GEN_ROOM=0
 
 if [ "$CARRIER" = "jitsi" ]; then
     echo ""
-    echo "Выберите Jitsi-сервер (проверьте в браузере, какой работает в вашей сети):"
-    echo "  1) https://meet.small-dm.ru/"
-    echo "  2) https://meet1.arbitr.ru/"
-    echo "  3) https://meet.handyweb.org/"
-    echo "  4) Другой (ввести вручную)"
-    read -p "Введите номер [1-4, по умолчанию: 1]: " JITSI_SERVER_CHOICE
+    echo "Выберите Jitsi-сервер (проверьте в браузере, какой работает в вашей сети; prefer gold all-ops validated):"
+    echo "  1) https://conference.ct.placetime.team/ (all-ops GOLD #1, validated ANONYMOUS — primary)"
+    echo "  2) https://meet.cryptopro.ru/ (all-ops GOLD, ANON advertised)"
+    echo "  3) https://meeting.dks.lanit.ru/ (all-ops GOLD)"
+    echo "  4) https://meet.picasso-tech.ru/ (all-ops promising)"
+    echo "  5) https://meet.greenfinance.ru/ (all-ops promising, PLAIN-heavy)"
+    echo "  6) https://meet1.arbitr.ru/ (Megafon fallback)"
+    echo "  7) https://meet.small-dm.ru/ (default fallback)"
+    echo "  8) https://meet.handyweb.org/"
+    echo "  9) Другой (ввести вручную)  — сначала протестируйте: ./script/validate-carrier.sh <domain>"
+    read -p "Введите номер [1-9, по умолчанию: 1]: " JITSI_SERVER_CHOICE
 
     case "$JITSI_SERVER_CHOICE" in
         2)
-            JITSI_BASE_URL="https://meet1.arbitr.ru"
+            JITSI_BASE_URL="https://meet.cryptopro.ru"
             ;;
         3)
-            JITSI_BASE_URL="https://meet.handyweb.org"
+            JITSI_BASE_URL="https://meeting.dks.lanit.ru"
             ;;
         4)
+            JITSI_BASE_URL="https://meet.picasso-tech.ru"
+            ;;
+        5)
+            JITSI_BASE_URL="https://meet.greenfinance.ru"
+            ;;
+        6)
+            JITSI_BASE_URL="https://meet1.arbitr.ru"
+            ;;
+        7)
+            JITSI_BASE_URL="https://meet.small-dm.ru"
+            ;;
+        8)
+            JITSI_BASE_URL="https://meet.handyweb.org"
+            ;;
+        9)
             read -p "Введите URL Jitsi-сервера: " JITSI_BASE_INPUT
             JITSI_BASE_URL="${JITSI_BASE_INPUT%/}"
             if [ -z "$JITSI_BASE_URL" ]; then
@@ -151,7 +182,7 @@ if [ "$CARRIER" = "jitsi" ]; then
             fi
             ;;
         *)
-            JITSI_BASE_URL="https://meet.small-dm.ru"
+            JITSI_BASE_URL="https://conference.ct.placetime.team"
             ;;
     esac
 
@@ -530,3 +561,8 @@ echo ""
 echo "Stop server:"
 echo "  podman stop $CONTAINER_NAME"
 echo ""
+
+# W3 enhancements (2026-06-12): 
+# Source good-carriers recommendations. Default to all-ops gold first (conference.ct.placetime.team #1 strong ANON, cryptopro, dks, etc).
+# Always call ./script/validate-carrier.sh <chosen> before use.
+# See docs/good-carriers.md for full list and night probes.

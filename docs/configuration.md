@@ -169,6 +169,12 @@ traffic:
 
 `mode: srv` и `mode: cnc` могут задавать `profiles`. Верхнеуровневые поля становятся общими defaults, а каждый профиль переопределяет только то, что указано внутри него.
 
+**Практика 2026-06 (P2/P3+):** Используй validated good carriers из [good-carriers.md](good-carriers.md) (all-operators ✅ gold first: conference.ct.placetime.team=5.178.85.63 и т.д.). Пример готового файла: `docs/examples/failover-good-carriers.yaml`. 
+
+Порядок профилей критичен (должен совпадать srv <-> cnc). Gold all-ops — primary для широких платных подписок (non-Megafon). Megafon — fallback. 
+
+Перед продвижением профиля: всегда `./script/validate-carrier.sh <domain>` + soak. Обновляй good-carriers.md live results (night autonomous probes в /tmp/validate-*.log). См. также sub.md для генерации multi-carrier olcrtc:// подписок из того же списка.
+
 ```yaml
 mode: srv
 crypto:

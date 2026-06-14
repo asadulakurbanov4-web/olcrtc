@@ -128,11 +128,15 @@ func (h *HealthTracker) RecordSession(id string) {
 }
 
 // RecordPong updates LastPong/LastRTT and clears MissedPongs.
+// Also resets volume counter (bytes since pong) for stall detection.
 func (h *HealthTracker) RecordPong(p control.Health) {
 	h.update(func(s *control.Status) {
 		s.LastPong = p.LastSeen
 		s.LastRTT = p.RTT
 		s.MissedPongs = 0
+		s.BytesSincePong = 0
+		s.LastDataTime = p.LastSeen
+		s.Suspect = false // clear on successful pong round
 	})
 }
 
@@ -156,6 +160,22 @@ func (h *HealthTracker) RecordUnhealthy(missed int) {
 func (h *HealthTracker) RecordReconnect() {
 	h.update(func(s *control.Status) {
 		s.Reconnects++
+	})
+}
+
+// RecordBytes accumulates tunnel data volume (from OnTraffic or mux copy paths).
+// Used for volume-aware liveness: if VolumeAware in control cfg, low bytes after
+// stall_threshold_kb + time since LastPong > threshold -> suspect stall (TSPU DPI freeze after ~15-20KB).
+// Call e.g. from server OnTraffic callbacks or client data pumps. Resets on pong via RecordPong.
+func (h *HealthTracker) RecordBytes(n int64) {
+	if n <= 0 {
+		return
+	}
+	h.update(func(s *control.Status) {
+		s.BytesSincePong += n
+		s.LastDataTime = time.Now()
+		// Simple local suspect heuristic stub (full check can combine with control cfg in caller):
+		// if s.BytesSincePong > 0 && /* cfg known */ ... { s.Suspect = true }
 	})
 }
 

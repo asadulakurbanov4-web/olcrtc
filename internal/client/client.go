@@ -538,6 +538,7 @@ func (c *Client) recordPong(h control.Health)    { c.health.RecordPong(h) }
 func (c *Client) recordMissed(missed int)        { c.health.RecordMissed(missed) }
 func (c *Client) recordUnhealthy(missed int)     { c.health.RecordUnhealthy(missed) }
 func (c *Client) recordReconnect()               { c.health.RecordReconnect() }
+func (c *Client) recordBytes(n int64)            { c.health.RecordBytes(n) }
 
 func (c *Client) shutdown() {
 	c.sessMu.Lock()

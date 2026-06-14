@@ -34,43 +34,78 @@ done
 
 echo "=== OlcRTC Client Deployment Script ==="
 echo ""
+echo "For production/reliable paid VPN: use validated good carriers from docs/good-carriers.md"
+echo "First validate candidates with: ./script/validate-carrier.sh <domain> (ANONYMOUS probe + optional --soak)"
+echo "  New: --batch-gold (validate all gold domains), --list-gold, --soak (client soak after ANON success)"
+echo "  Logs auto-saved to /tmp/validate-YYYYMMDD-<domain>.log"
+echo "Prefer domains (bare IPs fail TLS cert validation - see script diagnostics)."
+echo "GOLD all-ops (validated PROMISING/ANONYMOUS 2026-06-12, jitsi datachannel first):"
+echo "  conference.ct.placetime.team (5.178.85.63 #1 gold), meet.cryptopro.ru (193.37), meeting.dks.lanit.ru (195.128),"
+echo "  meet.picasso-tech.ru, meet.greenfinance.ru (128.75.255.25), conf.movistagroup.ru, meet.ars.ru etc. (see good-carriers.md for full live + mappings)"
+echo "Megafon fallback: meet1.arbitr.ru (84.201.184.28)"
+echo "P3/SUB3 done: scripts updated with new domains + validate integration. Run validate before prod choice."
+echo "TIP: Always prefer DOMAIN names (not bare IPs) — TLS certs are for domains. See good-carriers.md 'Tooling' section."
+echo ""
+echo ""
 echo "[*] Using branch: $BRANCH"
 echo ""
 
-if ! command -v podman &> /dev/null; then
-    echo "[!] Installing Podman..."
-
-    if [ "$(id -u)" -eq 0 ]; then
-        SUDO=""
-    elif command -v sudo &> /dev/null; then
-        SUDO="sudo"
-    elif command -v doas &> /dev/null; then
-        SUDO="doas"
+if ! command -v $PODMAN_CMD &> /dev/null; then
+    # Docker fallback
+    if command -v docker &> /dev/null; then
+        echo "[*] Podman not found, using Docker as fallback"
+        PODMAN_CMD="docker"
     else
-        echo "[X] No sudo/doas found and not running as root. Cannot install podman."
-        exit 1
-    fi
+        echo "[!] Neither Podman nor Docker found. Installing Podman..."
 
-    if command -v apt &> /dev/null; then
-        echo "[*] Detected apt (Debian/Ubuntu)"
-        $SUDO apt update
-        $SUDO apt install -y podman
-    elif command -v dnf &> /dev/null; then
-        echo "[*] Detected dnf (Fedora/RHEL)"
-        $SUDO dnf install -y podman
-    elif command -v yum &> /dev/null; then
-        echo "[*] Detected yum (CentOS/RHEL)"
-        $SUDO yum install -y podman
-    elif command -v pacman &> /dev/null; then
-        echo "[*] Detected pacman (Arch)"
-        $SUDO pacman -Sy --noconfirm podman
-    else
-        echo "[X] Unsupported package manager. Install podman manually."
-        exit 1
+        if [ "$(id -u)" -eq 0 ]; then
+            SUDO=""
+        elif command -v sudo &> /dev/null; then
+            SUDO="sudo"
+        elif command -v doas &> /dev/null; then
+            SUDO="doas"
+        else
+            echo "[X] No sudo/doas found and not running as root. Cannot install $PODMAN_CMD."
+            exit 1
+        fi
+
+        if command -v apt &> /dev/null; then
+            echo "[*] Detected apt (Debian/Ubuntu)"
+            $SUDO apt update
+            $SUDO apt install -y $PODMAN_CMD
+        elif command -v dnf &> /dev/null; then
+            echo "[*] Detected dnf (Fedora/RHEL)"
+            $SUDO dnf install -y $PODMAN_CMD
+        elif command -v yum &> /dev/null; then
+            echo "[*] Detected yum (CentOS/RHEL)"
+            $SUDO yum install -y $PODMAN_CMD
+        elif command -v pacman &> /dev/null; then
+            echo "[*] Detected pacman (Arch)"
+            $SUDO pacman -Sy --noconfirm $PODMAN_CMD
+        elif command -v apk &> /dev/null; then
+            echo "[*] Detected apk (Alpine)"
+            $SUDO apk add $PODMAN_CMD
+        elif command -v zypper &> /dev/null; then
+            echo "[*] Detected zypper (openSUSE)"
+            $SUDO zypper install -y $PODMAN_CMD
+        else
+            echo "[X] Unsupported package manager. Install $PODMAN_CMD or docker manually."
+            exit 1
+        fi
     fi
 fi
 
-echo "[+] Using Podman"
+# Determine runtime command
+if command -v $PODMAN_CMD &> /dev/null; then
+    PODMAN_CMD="$PODMAN_CMD"
+elif command -v docker &> /dev/null; then
+    PODMAN_CMD="docker"
+else
+    echo "[X] No container runtime available"
+    exit 1
+fi
+
+echo "[+] Using container runtime: $PODMAN_CMD"
 echo ""
 
 validate_key() {
@@ -130,21 +165,41 @@ echo ""
 
 if [ "$AUTH" = "jitsi" ]; then
     echo ""
-    echo "Выберите Jitsi-сервер (проверьте в браузере, какой работает в вашей сети):"
-    echo "  1) https://meet.small-dm.ru/"
-    echo "  2) https://meet1.arbitr.ru/"
-    echo "  3) https://meet.handyweb.org/"
-    echo "  4) Другой (ввести вручную)"
-    read -p "Введите номер [1-4, по умолчанию: 1]: " JITSI_SERVER_CHOICE
+    echo "Выберите Jitsi-сервер (проверьте в браузере, какой работает в вашей сети; prefer gold all-ops validated):"
+    echo "  1) https://conference.ct.placetime.team/ (all-ops GOLD #1, validated ANONYMOUS — primary)"
+    echo "  2) https://meet.cryptopro.ru/ (all-ops GOLD, ANON advertised)"
+    echo "  3) https://meeting.dks.lanit.ru/ (all-ops GOLD)"
+    echo "  4) https://meet.picasso-tech.ru/ (all-ops promising)"
+    echo "  5) https://meet.greenfinance.ru/ (all-ops promising, PLAIN-heavy)"
+    echo "  6) https://meet1.arbitr.ru/ (Megafon fallback)"
+    echo "  7) https://meet.small-dm.ru/ (default fallback)"
+    echo "  8) https://meet.handyweb.org/"
+    echo "  9) Другой (ввести вручную)  — сначала протестируйте: ./script/validate-carrier.sh <domain>"
+    read -p "Введите номер [1-9, по умолчанию: 1]: " JITSI_SERVER_CHOICE
 
     case "$JITSI_SERVER_CHOICE" in
         2)
-            JITSI_BASE_URL="https://meet1.arbitr.ru"
+            JITSI_BASE_URL="https://meet.cryptopro.ru"
             ;;
         3)
-            JITSI_BASE_URL="https://meet.handyweb.org"
+            JITSI_BASE_URL="https://meeting.dks.lanit.ru"
             ;;
         4)
+            JITSI_BASE_URL="https://meet.picasso-tech.ru"
+            ;;
+        5)
+            JITSI_BASE_URL="https://meet.greenfinance.ru"
+            ;;
+        6)
+            JITSI_BASE_URL="https://meet1.arbitr.ru"
+            ;;
+        7)
+            JITSI_BASE_URL="https://meet.small-dm.ru"
+            ;;
+        8)
+            JITSI_BASE_URL="https://meet.handyweb.org"
+            ;;
+        9)
             read -p "Введите URL Jitsi-сервера: " JITSI_BASE_INPUT
             JITSI_BASE_URL="${JITSI_BASE_INPUT%/}"
             if [ -z "$JITSI_BASE_URL" ]; then
@@ -153,7 +208,7 @@ if [ "$AUTH" = "jitsi" ]; then
             fi
             ;;
         *)
-            JITSI_BASE_URL="https://meet.small-dm.ru"
+            JITSI_BASE_URL="https://conference.ct.placetime.team"
             ;;
     esac
 
@@ -326,7 +381,7 @@ if [ "$NO_CACHE" = "1" ]; then
     chmod -R u+w "$GOMOD_CACHE" "$GO_BUILD_CACHE" 2>/dev/null || true
     if ! rm -rf "$GOMOD_CACHE" "$GO_BUILD_CACHE" 2>/dev/null; then
         echo "[*] Falling back to in-container purge (files owned by container UID)..."
-        podman run --rm \
+        "$PODMAN_CMD" run --rm \
             -v "$CACHE_DIR":/cache:Z \
             "$IMAGE_NAME" \
             sh -c 'rm -rf /cache/gomod /cache/gobuild'
@@ -340,10 +395,10 @@ echo "[*] Cloning repository..."
 git clone --depth 1 --recurse-submodules --branch "$BRANCH" "$REPO_URL" "$WORK_DIR"
 
 echo "[*] Pulling Go image..."
-podman pull "$IMAGE_NAME"
+"$PODMAN_CMD" pull "$IMAGE_NAME"
 
 echo "[*] Building OlcRTC..."
-podman run --rm \
+"$PODMAN_CMD" run --rm \
     --network host \
     -v "$WORK_DIR":/app:Z \
     -v "$GOMOD_CACHE":/go/pkg/mod:Z \
@@ -426,7 +481,7 @@ START_CMD="./olcrtc client.yaml"
 if [ "$TRANSPORT" = "videochannel" ]; then
     START_CMD="apk add --no-cache ffmpeg >/dev/null && ./olcrtc client.yaml"
 fi
-podman run -d \
+"$PODMAN_CMD" run -d \
     --name "$CONTAINER_NAME" \
     --network host \
     --restart unless-stopped \
@@ -451,10 +506,10 @@ echo "SOCKS5 proxy:   $SOCKS_IP:$SOCKS_PORT"
 fi
 echo ""
 echo "View logs:"
-echo "  podman logs -f $CONTAINER_NAME"
+echo "  $PODMAN_CMD logs -f $CONTAINER_NAME"
 echo ""
 echo "Stop client:"
-echo "  podman stop $CONTAINER_NAME"
+echo "  $PODMAN_CMD stop $CONTAINER_NAME"
 echo ""
 echo "Test proxy:"
 if [ -n "$SOCKS_USER" ]; then
@@ -463,3 +518,8 @@ else
 echo "  curl --socks5-hostname $SOCKS_IP:$SOCKS_PORT https://icanhazip.com"
 fi
 echo ""
+
+# W3 enhancements (2026-06-12): 
+# Source good-carriers recommendations. Default to all-ops gold first (conference.ct.placetime.team #1 strong ANON, cryptopro, dks, etc).
+# Always call ./script/validate-carrier.sh <chosen> before use.
+# See docs/good-carriers.md for full list and night probes.

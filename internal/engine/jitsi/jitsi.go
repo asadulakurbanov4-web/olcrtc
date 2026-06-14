@@ -773,9 +773,15 @@ func (s *Session) xmppKeepalive() {
 				continue
 			}
 			id := conn.NextID()
+			// Use the Jitsi XMPP service domain (meet.jitsi) for the keepalive ping IQ
+			// instead of the web/tunnel host (e.g. conference.ct.placetime.team).
+			// The latter is treated as a "remote domain" by Prosody and pings are rejected
+			// with "Communication with remote domains is not enabled".
+			// This fixes the post-MUC handshake/liveness failures observed in OlcBox logs
+			// while keeping the BOSH/WS session alive. See xmppKeepalive docs.
 			ping := fmt.Sprintf(
 				`<iq type="get" to="%s" id="%s" xmlns="jabber:client"><ping xmlns="urn:xmpp:ping"/></iq>`,
-				conn.Host(), id,
+				"meet.jitsi", id,
 			)
 			if err := conn.Send(ping); err != nil {
 				if s.closed.Load() {

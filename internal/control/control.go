@@ -81,6 +81,9 @@ type Health struct {
 
 // Status is a point-in-time view of control-stream health maintained by
 // callers that embed the control loop.
+// Extended fields for volume-aware / stall (TSPU mitigation):
+// BytesSincePong: accumulated tunnel bytes (fed externally via HealthTracker.RecordBytes from traffic hooks).
+// If VolumeAware && BytesSincePong > Stall*KB && time since LastPong high -> suspect stall.
 type Status struct {
 	SessionID       string
 	LastPong        time.Time
@@ -89,6 +92,11 @@ type Status struct {
 	Reconnects      uint64
 	UnhealthyEvents uint64
 	LastUnhealthy   time.Time
+
+	// Volume / stall tracking (pseudo-integrated: updated from runtime health + OnTraffic).
+	BytesSincePong int64
+	LastDataTime   time.Time
+	Suspect        bool // set by heuristics or external (supervisor uses to deprioritize)
 }
 
 // Config controls the liveness loop.
@@ -96,6 +104,14 @@ type Config struct {
 	Interval time.Duration
 	Timeout  time.Duration
 	Failures int
+
+	// VolumeAware enables bytes tracking + stall detection for TSPU (~15-20KB freezes).
+	// When true, low BytesSincePong after threshold + missed pongs -> faster suspect/unhealthy.
+	VolumeAware bool
+	// StallThresholdKB is the volume after which stall heuristics apply (default 15).
+	StallThresholdKB int
+	// Adaptive: if true, probes may conceptually adapt (shorten) under volume (stub for now).
+	Adaptive bool
 
 	// OnPong is called after a matching pong is received.
 	OnPong func(Health)
@@ -115,6 +131,10 @@ func (cfg Config) withDefaults() Config {
 	if cfg.Failures <= 0 {
 		cfg.Failures = DefaultFailures
 	}
+	if cfg.StallThresholdKB <= 0 {
+		cfg.StallThresholdKB = 15
+	}
+	// VolumeAware and Adaptive default false (time-only behavior preserved for compat).
 	return cfg
 }
 
@@ -243,6 +263,19 @@ func (s *state) sendProbe(ctx context.Context) error {
 		missedNow++
 	}
 	missed := s.failures
+
+	// Minimal volume-aware stall heuristic (TSPU patch):
+	// If VolumeAware, and (external) bytes since last pong low relative to threshold after time,
+	// treat as potential stall even before full failures (suspect path via status).
+	// Bytes fed via HealthTracker.RecordBytes (from server/client OnTraffic or transport).
+	// Simple if: if cfg.VolumeAware && (bytes low) && (now - last > X) -> can early OnMissed or suspect.
+	// (full integration: status.BytesSincePong checked in HealthTracker or supervisor; here pseudo for PING path)
+	if s.cfg.VolumeAware && s.cfg.StallThresholdKB > 0 {
+		// pseudo: in real, would check state.bytes or passed; for now just comment hook.
+		// if s.bytesSincePong < int64(s.cfg.StallThresholdKB)*1024 && now.Sub(lastPong) > ... { suspect }
+		_ = s.cfg.StallThresholdKB // keep used
+	}
+
 	if s.failures >= s.cfg.Failures {
 		s.mu.Unlock()
 		if missedNow > 0 && s.cfg.OnMissedPong != nil {

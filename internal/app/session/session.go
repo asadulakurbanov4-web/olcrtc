@@ -3,6 +3,7 @@ package session
 
 import (
 	"context"
+	"os"
 	"errors"
 	"fmt"
 	"net"
@@ -212,6 +213,7 @@ type Config struct {
 	AuthzEnforceInterval  string
 	AuthzFailMode         string // lkg (prod default) | open | closed
 	AuthzLkgMaxAge        string // e.g. "24h" — hard ceiling for LKG staleness
+	AuthzAdminAddr        string // if non-empty: start admin HTTP on this addr
 }
 
 // RegisterDefaults registers built-in carriers and transports.
@@ -694,6 +696,12 @@ func runOnce(
 			FailMode:        cfg.AuthzFailMode,
 			LkgMaxAge:       lkgMax,
 		})
+		// Start admin HTTP server if configured (Task 11)
+		if cfg.AuthzAdminAddr != "" {
+			adminToken := os.Getenv("OLCRTC_ADMIN_TOKEN")
+			adminSrv := authz.NewAdminServer(gate, cfg.AuthzAdminAddr, adminToken)
+			adminSrv.Start()
+		}
 		var authHook handshake.AuthFunc
 		var allowedFn func(string) bool
 		var sweepInterval time.Duration

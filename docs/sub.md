@@ -157,6 +157,12 @@ olcrtc://wbstream?datachannel@abc123xyz#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 ##comment: reserve route, wbstream+datachannel does not work in guest flow
 ```
 
+**Пример multi-carrier commercial (из good-carriers, P4/P5 night generator):** см. `docs/examples/subs-multi-gold.txt` и `/tmp/subs-night.txt`.
+
+Используй gold all-ops (conference.ct.placetime.team и др.) первыми. Генератор subs: `script/generate-subs-from-good-carriers.py` (парсит Live results + mappings из good-carriers.md).
+
+Всегда: `./script/validate-carrier.sh <domain>` перед добавлением в подписку + client soak. Приоритет all-operators для платных (см. good-carriers.md).
+
 ## Имплементация клиента для подписок
 
 На данный момент не существует единой реализации, но в скором времени они точно появятся даже в официальном репозитории.
