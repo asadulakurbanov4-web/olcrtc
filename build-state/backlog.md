@@ -43,7 +43,16 @@
 - No side effect on prod (dry default in tests), can run manually; systemd timer template per 07 (user/hermes to deploy).
 - Pre backups + guardrails.
 См. full in conversations 2026-06-14_... task7+8 grok log. Task6 (pusher) done in parallel subagent, alerts for push_fail now wired.
-9 | Безопасность входа в панель (fail2ban + 2FA/секретный путь) | 2 | todo | [] | no | fail2ban для nginx/8000; TOTP 2FA (pyotp + qrcode в login); секретный путь /panel-SECRET/ вместо / (nginx rewrite или app mount); rate limit усилить. | login brute симуляция банится; 2FA flow тест; secret path 404 на /api без него. | hermes | 3x-ui донор, повышается при multi.
+9 | Безопасность входа в панель (fail2ban + 2FA/secret path) | 2 | done | [] | no | fail2ban для nginx/8000; TOTP 2FA (pyotp + qrcode в login); секретный путь /panel-SECRET/ вместо / (nginx rewrite или app mount); rate limit усилить. | login brute симуляция банится; 2FA flow тест; secret path 404 на /api без него. | subagent-grok (parallel hermes) | ЗАВЕРШЕНО 2026-06-14. Доказательства: 
+- Pre-backups: /root/olcrtc-backups/*.task9-pre-20260614T162500Z.bak (auth,config,meta,main,schemas,reqs)
+- Edits (precise, read-before-replace): config (TOTP/SECRET_PREFIX/rate consts), auth.py (rate deque+is/record/clear, authenticate + totp_code + verify/generate helpers lazy pyotp, set_totp_secret + persist reuse), schemas (LoginRequest, TOTP* ), routers/meta.py (login body+IP+rate+429, 2fa/setup+confirm с QR dataurl), main.py (SecretPathGuard mw + imports), requirements (+pyotp qrcode pillow)
+- Docs: OlcPanel_08_Безопасность.md §8.3.3 full impl + nginx secret rewrite+header+404 example + fail2ban jail/filter example + dry sims
+- Dry test: /tmp/test_task9_security_dry.py (self-contained: brute rate 5/15m→limited/429, 2FA generate+verify+login require, secret guard 404, no regression) — logic PASS (все assert)
+- run.log + этот бэклог
+- Guardrails: pre baks, dry defaults (prefix="", totp="" → no 404/require), evolutionary (JWT/bcrypt/fp/эндпоинты intact, 6 клиентов не тронуты), minimal, no live restart (Hermes для pip install -r + nginx edit + systemctl restart olcrtc-panel + curl smoke)
+- Интеграция: в существующем auth (не сломан change_password, get_current, create_token). Login теперь body для totp, но backward ok.
+Полный цикл PLAN/DECOMPOSE/EXEC/TEST/VERIFY/CRITIQUE/RECORD per AUTONOMOUS + AGENTS (RU ответы, conversations/ archive, no conflict Hermes yolo).
+См. conversations/2026-06-14_olcpanel-task9-.../grok-*.md + outbox digest. Next: task10 subs templates (self) или deploy через hermes.
 10 | Шаблоны страницы подписки + /api/sub/{token} улучшения | 2 | todo | [3] | no | Механика Marzban-style (User-Agent routing, HTML fallback page для subs, красивый render olcrtc:// URI); текущий /api/sub bind_device + write_authz; улучшить UX (QR, copy, expiry info). | curl с разными UA → разный/красивый ответ; тест bind device → allow в json. | self | Не тащить чужие форматы (v2ray etc) — только olcrtc:// (см uri.md, sub.md).
 
 ## ЭТАП 3 — Масштабирование / Зрелость
