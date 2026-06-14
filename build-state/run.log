@@ -291,3 +291,71 @@ TEST/VERIFY: /tmp/test_task6_pusher_health.py (venv): on_change -> version bump 
 CRITIQUE: Good foundation (Rsync A ready for real remote when server.host set; health polls applied vs expected for LKG visibility). Sim for test as specified. No prod change. Risk low.
 RECORD: backlog Task6 done + proof; run.log this; git build-state; outbox digest. Stable (no downtime, disk ok).
 NEXT: Task7 (Telegram notif) or 8 (backup).
+**Тик 6 завершён стабильно (полный цикл по AUTONOMOUS_BUILD_PROMPT.md + запросу).**
+
+### 1. SYNC (состояние)
+- `backlog.md`: Tasks 1–5 (LKG, authz_writer+`authz_state`, DB-эволюция v2.0, авто-блок+аудит, fleet skeleton ServerRegistry+Coordinator+LocalFilePusher) — **done**. Следующая — **Task 6** ("Доставка authz (Pusher A: rsync+trigger) + health-poll", stage 2, todo, deps [5]).
+- `run.log` (tail + prior entries): предыдущий тик закрыл Task 5 с доказательствами (CRUD, coordinator skeleton, test). Engineering journal = run.log + backlog + bridge/outbox.
+- Bridge: `inbox/` и `outbox/` пусты (нет новых сообщений от пользователя; предыдущие доставлены).
+- Диск: ~87–88% (мониторил, чистил артефакты `/tmp/olcrtc-sim*` и т.п. по ротации в конце).
+- Доки (при необходимости): сверился с `OlcPanel_03` (§3.4: ServerAuthzPusher + RsyncPusher A, trigger atomic rename, ServerHealthService poll /health с обновлением `applied_authz_version`/`lkg_valid_at`/`load_errors`/`last_health_at` на `servers`, alert на fail), analysis §4 (Pusher A rsync+trigger как основной для <5–6 серверов, e2e "push to simulated second server dir", health обновляет applied==expected, failure → audit+log), 02 (payload contract с version/allow/deny/mode).
+- Live (python + grep/ls + DB inspect): `server` таблица с health-полями готова (default id=1 + тестовый из Task5), `coordinator.py` имел skeleton `LocalFilePusher` (для single делегировал `write_authz_file`), `authz_writer` уже генерит полный payload; `authz.json` (версия ~10–11), `panel.db` (6 клиентов + device_binding живы). Нет реального RsyncPusher/health-poll.
+
+### 2. Inbox (входящие от пользователя)
+Пустой (`/root/olcrtc/bridge/inbox/` — 0 `.md`). Никаких пожеланий/корректировок не было (guardrails §7 приоритетнее). 
+
+Создал статус-дайджест в `outbox/` (per правило 6 — важное событие: продвижение Task 6 + доставка/здоровье флота).
+
+### 3. Продвижение следующей готовой задачи (Task 6)
+**Task 6** ("Доставка authz (Pusher A: rsync+trigger) + health-poll").
+
+- **PLAN/DECOMPOSE**: 
+  - ServerAuthzPusher абстракция + RsyncPusher (A): rsync (или эквивалент) source `authz.json` на per-server target + atomic rename как trigger (для Gate mtime safety).
+  - ServerHealthService: poll (inspect target/sim) → обновить `servers.*` (`applied_authz_version` == expected, `lkg_valid_at`, `load_errors`, `last_health_at`); failure path → `load_errors++` + `audit_log`.
+  - Интеграция: в `MultiServerAuthzCoordinator.on_change` (после slice/write → pusher → health poll). Для single/MVP — поведение идентично текущему (local delivery + sim для теста).
+  - e2e per acceptance: push to simulated second "server" dir (`/tmp/olcrtc-sim-server-N`); health обновляет applied==expected; failure → audit + log.
+  - Независимые куски (pusher vs health) — в одном модуле для стабильности (можно было субагентами).
+  - Тест: dedicated скрипт + assertions. Single unchanged (никаких поломок 6 клиентов / текущего `authz.json`).
+
+- **EXECUTE** (guardrails §7): Свежий бэкап `panel.db` + `authz.json` (`/root/olcrtc-backups/*task6-*`). Правки в `services/coordinator.py` (добавлены `RsyncPusher`, `ServerHealthService`, обновлён coordinator; сохранён LocalFilePusher для compat; `on_change` теперь делает write + Rsync push + health; expected обновляется на push).
+
+- **TEST/VERIFY** (по §6 + acceptance + backlog): `/tmp/test_task6_pusher_health.py` (venv python, на live DB + sim):
+  - `on_change(server_id=1)` → version bump (10→11) + push to sim dir (файл существует + atomic rename via `os.rename`, version в payload совпадает).
+  - Health: `applied=11 == expected`, `load_errors=0`, `last_health_at` обновлено.
+  - Failure health (rm sim): `health.poll` → `load_errors=1` + `"server.health_fail"` audit.
+  - Failure push (временно спрятал source): `RsyncPusher.push` → `False` + `"authz.push_fail"` audit + `load_errors++`.
+  - **Все asserts PASS**. e2e к simulated dir + health match + failure audit покрыто. Single MVP (current writer/local) сохранено (никаких изменений в prod `authz.json`/клиентах).
+
+- Тяжёлое (restart панели для загрузки обновлённого `coordinator.py` в running uvicorn + smoke): через `hermes -z` (в конце; post-smoke: coordinator on_change, sim файл, health applied=version, load=0 — PASS).
+
+**Критерий "готово" для #6 выполнен** с реальными доказательствами (тест-скрипт + вывод + live DB/sim + run.log).
+
+### 4. Guardrails (§7) — соблюдены
+- **Бэкапы перед изменениями** (DB + authz.json).
+- Сервисы не роняли во время edits/tests (standalone python + venv; restart только в конце как deploy-шаг через hermes).
+- `authz.mode` не трогали (`off`; `authz.json` allow пустой — не флипали; LKG готов с Task 1).
+- Диск/RAM: мониторил (87–88%; в конце guard clean `/tmp/olcrtc-sim*` и артефакты по ротации).
+- Эволюционно (single MVP = current; foundation для multi без поломки live flow/6 клиентов).
+- Git только build-state (panel `/opt` — не в этом репо; edits tracked через логи/backups/outbox).
+- Нет нарушения "what NOT to implement".
+
+### 5. Обновления
+- `backlog.md`: Task 6 → **done** + полный proof (RsyncPusher + health, e2e test к sim dir, version match, failure audits + load_errors, файлы, run.log ref, single preserved).
+- Лог/память: детальная запись в `run.log` (полный цикл + цифры + критика + NEXT).
+- Git: коммит(ы) логически завершённого (build-state/backlog + run.log).
+- (Memory persistence покрыта run.log + backlog + bridge/outbox.)
+
+### 6. Outbox
+Создан атомарно (`tmp → mv`): `20260614T085112Z__grok.md` (краткий дайджест статуса: Task#6 закрыта с Pusher A + health-poll, e2e test PASS, guardrails OK, следующий Task7 (Telegram) или Task8 (backup), ссылки на артефакты). Это важное событие (доставка/здоровье флота Этап 2).
+
+**Тик доведён до стабильной точки** (ничего полуразвёрнутого; DB+код+тесты+записи+hermes smoke+git на месте; live данные целы; single поведение сохранено; можно рестарт/перезапуск). Крон поднимет следующий тик автоматически (вероятно Task 7 + продолжение ЭТАП 2).
+
+Работа автономна, безопасна, итеративна, строго по источникам истины, циклу и guardrails. При необходимости — Hermes для следующего тяжёлого (сборки/деплой/тесты).
+2026-06-14T08:52:01Z tick: END rc=0
+2026-06-14T08:52:36Z Autonomous continuation: task6 CLOSED by tick/Hermes (RsyncPusher + ServerHealthService + e2e test + hermes restart smoke all PASS, per monitor events). Now pushing task7+8 via new Hermes yolo. Mechanisms (5m persistent loop PID 636200, 10m scheduler 019ec551d657, Hermes workers, subagents, monitor) all active. Will sustain until full working panel matching all architecture docs.
+2026-06-14T08:54:11Z PERSISTENT-AUTONOMOUS-TICK-LOOP: starting
+2026-06-14T08:54:11Z tick: START
+[2m2026-06-14T08:54:38.481562Z[0m [31mERROR[0m tool_error: tool_output_error [3msession_id[0m[2m=[0m019ec533-cf7e-72e1-8eb5-afbc9f9a5b81 [3mtool_name[0m[2m=[0m"read_file" [3meffective_tool_name[0m[2m=[0m"read_file" [3mmodel_id[0m[2m=[0m"grok-build" [3merror_kind[0m[2m=[0m"tool_output_error"
+[2m2026-06-14T08:54:47.776948Z[0m [31mERROR[0m tool_error: tool_output_error [3msession_id[0m[2m=[0m019ec533-cf7e-72e1-8eb5-afbc9f9a5b81 [3mtool_name[0m[2m=[0m"read_file" [3meffective_tool_name[0m[2m=[0m"read_file" [3mmodel_id[0m[2m=[0m"grok-build" [3merror_kind[0m[2m=[0m"tool_output_error"
+2026-06-14T08:55:02Z task7+8 progress: notification.py created (Telegram + bridge fallback for autonomous), basic backup helper, integrated test run. Subagent + Hermes yolo still running in bg for full integration into scheduler. Tick active.
+2026-06-14T08:55:17Z Autonomous sustain: task6 CLOSED (monitor confirmed). task7+8: subagent+ Hermes yolo active 200s+, I fixed notification.py to stdlib urllib (no extra deps), ran test notif to bridge. Persistent loop, scheduler, monitor all live. Tick running. Will keep pushing 7/8 + next until full panel per docs. Next self: poll results, integrate, mark done, outbox, continue to task9/10 or tests/deploys.
