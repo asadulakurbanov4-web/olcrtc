@@ -49,8 +49,17 @@ type File struct {
 	Gen       Gen       `yaml:"gen"`
 	Profiles  []Profile `yaml:"profiles"`
 	Failover  Failover  `yaml:"failover"`
+	Authz     Authz     `yaml:"authz"`
 	Data      string    `yaml:"data"`
 	Debug     bool      `yaml:"debug"`
+}
+
+// Authz gates client sessions by deviceID against a panel-written allowlist file.
+// Server-global (not per-profile) so it survives failover unchanged.
+type Authz struct {
+	Mode            string `yaml:"mode"`             // allowlist | denylist | off (default off)
+	DeviceFile      string `yaml:"device_file"`      // JSON allowlist the panel writes
+	EnforceInterval string `yaml:"enforce_interval"` // sweep cadence for live sessions, e.g. "30s"
 }
 
 // Profile is a failover entry that overrides top-level runtime fields.
@@ -289,6 +298,9 @@ func Apply(dst session.Config, f File) session.Config {
 	dst.TrafficMinDelay = pickString(dst.TrafficMinDelay, f.Traffic.MinDelay)
 	dst.TrafficMaxDelay = pickString(dst.TrafficMaxDelay, f.Traffic.MaxDelay)
 	dst.Amount = pickInt(dst.Amount, f.Gen.Amount)
+	dst.AuthzMode = pickString(dst.AuthzMode, f.Authz.Mode)
+	dst.AuthzDeviceFile = pickString(dst.AuthzDeviceFile, f.Authz.DeviceFile)
+	dst.AuthzEnforceInterval = pickString(dst.AuthzEnforceInterval, f.Authz.EnforceInterval)
 	return dst
 }
 

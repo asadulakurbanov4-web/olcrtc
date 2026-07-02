@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/openlibrecommunity/olcrtc/internal/auth"
+	"github.com/openlibrecommunity/olcrtc/internal/authz"
 	"github.com/openlibrecommunity/olcrtc/internal/client"
 	"github.com/openlibrecommunity/olcrtc/internal/control"
+	"github.com/openlibrecommunity/olcrtc/internal/handshake"
 	enginebuiltin "github.com/openlibrecommunity/olcrtc/internal/engine/builtin"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/names"
@@ -202,6 +204,9 @@ type Config struct {
 	TrafficMinDelay       string
 	TrafficMaxDelay       string
 	Amount                int
+	AuthzMode             string
+	AuthzDeviceFile       string
+	AuthzEnforceInterval  string
 }
 
 // RegisterDefaults registers built-in carriers and transports.
@@ -645,6 +650,27 @@ func runOnce(
 	opts := buildTransportOptions(cfg)
 	switch cfg.Mode {
 	case modeSRV:
+		// Device authz gate (per-client revocation). Disabled by default → admits everyone.
+		enforceInterval := 30 * time.Second
+		if cfg.AuthzEnforceInterval != "" {
+			if d, err := time.ParseDuration(cfg.AuthzEnforceInterval); err == nil && d > 0 {
+				enforceInterval = d
+			}
+		}
+		gate := authz.New(authz.Config{
+			Mode:            cfg.AuthzMode,
+			DeviceFile:      cfg.AuthzDeviceFile,
+			EnforceInterval: enforceInterval,
+		})
+		var authHook handshake.AuthFunc
+		var allowedFn func(string) bool
+		var sweepInterval time.Duration
+		if gate.Enabled() {
+			authHook = gate.AuthFunc()
+			allowedFn = gate.Allowed
+			sweepInterval = gate.EnforceInterval()
+			logger.Infof("authz gate enabled: mode=%s file=%s enforce=%s", cfg.AuthzMode, cfg.AuthzDeviceFile, sweepInterval)
+		}
 		if err := server.Run(ctx, server.Config{
 			Transport:        cfg.Transport,
 			Carrier:          cfg.Auth,
@@ -662,6 +688,9 @@ func runOnce(
 			Token:            cfg.Token,
 			Liveness:         liveness,
 			Traffic:          traffic,
+			AuthHook:         authHook,
+			Allowed:          allowedFn,
+			EnforceInterval:  sweepInterval,
 			OnSessionOpen: func(sessionID, deviceID string, claims map[string]any) {
 				logger.Infof("session opened: id=%s device=%s claims=%v", sessionID, deviceID, claims)
 			},
